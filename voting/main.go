@@ -22,7 +22,7 @@ type Request struct {
 }
 
 type Response struct {
-	Vehicle Vehicle
+	Vehicles []Vehicle
 }
 
 type ConcurrentVehicle struct {
@@ -35,34 +35,39 @@ type VehicleRPC struct {
 	Vehicles              []Vehicle
 	TotalVehicles         int
 	VoteCount             int
-	ConcurrentVehicleList *ConcurrentVehicle // 동시 통행 가능한 차량들의 리스트를 나타내는 포인터
+	ConcurrentVehicleList *ConcurrentVehicle
 	mu                    sync.Mutex
+}
+
+func (v *VehicleRPC) GetVehicles(req struct{}, reply *Response) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	reply.Vehicles = v.Vehicles
+	return nil
 }
 
 func (v *VehicleRPC) SendRequest(req Request, reply *Response) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	fmt.Printf("Vehicle : %v\n", req.Vehicle)
-	req.Vehicle.Votes++
+	fmt.Printf("Vehicle %d received request: %v\n", v.Address, req.Vehicle)
 
-	// 모든 차량에게 요청을 전송
+	req.Vehicle.Votes++
+	fmt.Println(req.Vehicle)
+
 	var wg sync.WaitGroup
+	var requestVehicles []Vehicle
 
 	for i := 0; i < req.TotalVehicles; i++ {
 		if i != req.Vehicle.Address {
 			address := fmt.Sprintf("localhost:%d", 8000+i)
 			fmt.Printf("Vehicle %d attempting to connect to vehicle %d at %s\n", req.Vehicle.Address, i, address)
 
-			wg.Add(1) // wg에 작업 추가
-			go func(addr string, vehicleAddr int) {
-				defer wg.Done() // 작업 완료 후 wg에서 제거
+			requestVehicles = append(requestVehicles, v.Vehicles[i])
 
-				// 슬라이스 인덱스 검증
-				if vehicleAddr >= len(v.Vehicles) {
-					fmt.Printf("Vehicle %d has an invalid index %d\n", req.Vehicle.Address, vehicleAddr)
-					return
-				}
+			wg.Add(1)
+			go func(addr string, vehicleAddr int) {
+				defer wg.Done()
 
 				client, err := rpc.Dial("tcp", addr)
 				if err != nil {
@@ -74,10 +79,8 @@ func (v *VehicleRPC) SendRequest(req Request, reply *Response) error {
 				fmt.Printf("Attempting RPC call to vehicle %d at %s\n", vehicleAddr, addr)
 
 				var response Response
-
-				// 요청 데이터 수정
 				req := Request{
-					Vehicle:       v.Vehicles[vehicleAddr], // 서버의 차량 목록에서 올바른 차량 정보 가져오기
+					Vehicle:       v.Vehicles[vehicleAddr],
 					TotalVehicles: req.TotalVehicles,
 				}
 
@@ -85,13 +88,14 @@ func (v *VehicleRPC) SendRequest(req Request, reply *Response) error {
 				if err != nil {
 					fmt.Printf("RPC call error to vehicle %d: %v\n", vehicleAddr, err)
 				} else {
-					fmt.Printf("Vehicle %d successfully sent request to vehicle %d.\n", req.Vehicle.Address, vehicleAddr)
+					fmt.Printf("Successfully sent response to vehicle %d.\n", vehicleAddr)
 				}
 			}(address, i)
 		}
 	}
 
 	wg.Wait()
+	reply.Vehicles = requestVehicles
 
 	return nil
 }
@@ -100,14 +104,8 @@ func (v *VehicleRPC) SendResponse(req Request, reply *Response) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	// Print received request
 	fmt.Printf("Vehicle %d received response request: %v\n", v.Address, req.Vehicle)
-
-	// Example logic: just echo the vehicle data back as the response
-	reply.Vehicle = req.Vehicle
-
-	// Print response being sent
-	fmt.Printf("Vehicle %d sending response: %v\n", v.Address, reply.Vehicle)
+	reply.Vehicles = []Vehicle{req.Vehicle}
 
 	return nil
 }
@@ -178,14 +176,6 @@ func startServer(address int, vehicles []Vehicle, totalVehicles int) {
 }
 
 func main() {
-	api := new(VehicleRPC)
-	err := rpc.Register(api)
-	if err != nil {
-		log.Fatal("error registering API", err)
-	}
-
-	rpc.HandleHTTP()
-
 	vehicles := []Vehicle{
 		{Number: "1", Direction: "N", Address: 0, Votes: 0},
 		{Number: "2", Direction: "S", Address: 1, Votes: 0},
