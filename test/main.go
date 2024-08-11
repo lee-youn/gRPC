@@ -139,16 +139,38 @@ func main() {
 	}
 
 	if TOTAL_VEHICLS == 2 {
-		var randomVehicle = rand.Intn(int(TOTAL_VEHICLS))
-		VEHICLES = RemoveValue(VEHICLES, int32(randomVehicle))
-		fmt.Printf("Address %d Vehicle passed \n", randomVehicle)
-		if randomVehicle == 0 {
-			VEHICLES = RemoveValue(VEHICLES, 1)
-			fmt.Printf("Address %d Vehicle passed \n", 1)
-		} else {
-			VEHICLES = RemoveValue(VEHICLES, 0)
-			fmt.Printf("Address %d Vehicle passed \n", 0)
+		var vehicle_number1 int32 = int32(rand.Intn(1))
+		var vehicle_number2 int32 = int32(rand.Intn(1))
+		
+		// 서버를 각각의 고루틴에서 실행
+		for i := int32(0); i < TOTAL_VEHICLS; i++ {
+			go startServer(i)
 		}
+
+		// 잠시 대기하여 서버가 시작될 시간 확보
+		time.Sleep(time.Second * 2)
+
+		// WaitGroup을 사용하여 모든 고루틴이 끝날 때까지 대기
+		var wg sync.WaitGroup
+		wg.Add(int(TOTAL_VEHICLS))
+
+		go func(i int32) {
+			defer wg.Done()
+			for j := int32(0); j < TOTAL_VEHICLS; j++ {
+				if i == j {
+					continue // 자기 자신에게는 요청을 보내지 않음
+				}
+
+		// var randomVehicle = rand.Intn(int(TOTAL_VEHICLS))
+		// VEHICLES = RemoveValue(VEHICLES, int32(randomVehicle))
+		// fmt.Printf("Address %d Vehicle passed \n", randomVehicle)
+		// if randomVehicle == 0 {
+		// 	VEHICLES = RemoveValue(VEHICLES, 1)
+		// 	fmt.Printf("Address %d Vehicle passed \n", 1)
+		// } else {
+		// 	VEHICLES = RemoveValue(VEHICLES, 0)
+		// 	fmt.Printf("Address %d Vehicle passed \n", 0)
+		// }
 		return
 	}
 
