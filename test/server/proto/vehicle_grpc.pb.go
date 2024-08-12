@@ -25,7 +25,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VehicleService_ReceiveRequest_FullMethodName = "/vehicleServer.VehicleService/ReceiveRequest"
+	VehicleService_ReceiveRequest_FullMethodName  = "/vehicleServer.VehicleService/ReceiveRequest"
+	VehicleService_RandomAgreement_FullMethodName = "/vehicleServer.VehicleService/RandomAgreement"
 )
 
 // VehicleServiceClient is the client API for VehicleService service.
@@ -33,6 +34,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type VehicleServiceClient interface {
 	ReceiveRequest(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error)
+	RandomAgreement(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error)
 }
 
 type vehicleServiceClient struct {
@@ -53,11 +55,22 @@ func (c *vehicleServiceClient) ReceiveRequest(ctx context.Context, in *Request, 
 	return out, nil
 }
 
+func (c *vehicleServiceClient) RandomAgreement(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Response)
+	err := c.cc.Invoke(ctx, VehicleService_RandomAgreement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VehicleServiceServer is the server API for VehicleService service.
 // All implementations must embed UnimplementedVehicleServiceServer
 // for forward compatibility.
 type VehicleServiceServer interface {
 	ReceiveRequest(context.Context, *Request) (*Response, error)
+	RandomAgreement(context.Context, *Request) (*Response, error)
 	mustEmbedUnimplementedVehicleServiceServer()
 }
 
@@ -70,6 +83,9 @@ type UnimplementedVehicleServiceServer struct{}
 
 func (UnimplementedVehicleServiceServer) ReceiveRequest(context.Context, *Request) (*Response, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReceiveRequest not implemented")
+}
+func (UnimplementedVehicleServiceServer) RandomAgreement(context.Context, *Request) (*Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RandomAgreement not implemented")
 }
 func (UnimplementedVehicleServiceServer) mustEmbedUnimplementedVehicleServiceServer() {}
 func (UnimplementedVehicleServiceServer) testEmbeddedByValue()                        {}
@@ -110,6 +126,24 @@ func _VehicleService_ReceiveRequest_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VehicleService_RandomAgreement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Request)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VehicleServiceServer).RandomAgreement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VehicleService_RandomAgreement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VehicleServiceServer).RandomAgreement(ctx, req.(*Request))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VehicleService_ServiceDesc is the grpc.ServiceDesc for VehicleService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +154,10 @@ var VehicleService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReceiveRequest",
 			Handler:    _VehicleService_ReceiveRequest_Handler,
+		},
+		{
+			MethodName: "RandomAgreement",
+			Handler:    _VehicleService_RandomAgreement_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

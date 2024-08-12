@@ -53,6 +53,7 @@ func startServer(address int32) {
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+
 }
 
 func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
@@ -83,6 +84,42 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 
 		return response, nil
 	}
+}
+
+func (s *server) RandomAgreement(ctx context.Context, req *pb.Request) (*pb.Response, error) {
+	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+
+	s.Vehicle.RandomNumber = req.RandomNumber
+
+	var response *pb.Response
+
+	if req.Vehicle.RandomNumber == s.Vehicle.RandomNumber {
+		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		fmt.Printf("Cannot reach an agreement.\n")
+		response = &pb.Response{
+			Message: fmt.Sprintf("Cannot reach an agreement"),
+			Status:  "draw",
+		}
+	} else if req.Vehicle.RandomNumber > s.Vehicle.RandomNumber {
+		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		fmt.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
+		response = &pb.Response{
+			Message: fmt.Sprintf("Vehicle %d may pass first.", req.Vehicle.Address),
+			Status:  "pass",
+		}
+	} else {
+		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		fmt.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
+		response = &pb.Response{
+			Message: fmt.Sprintf("Vehicle %d has to wait.", req.Vehicle.Address),
+			Status:  "wait",
+		}
+	}
+
+	return response, nil
 }
 
 ////////////////////////////////////////
@@ -118,14 +155,12 @@ var TOTAL_VEHICLS int32
 func main() {
 
 	// 교차로가 많아질수록? 5차선 6차선일 때 합의가 어려워짐..ㅠㅠ
-	var randomNum int32 = int32(rand.Intn(6))
-	var TOTAL_VEHICLS int32 = randomNum
+	// var randomNum int32 = int32(rand.Intn(3))
+	var TOTAL_VEHICLS int32 = 2
 
 	for i := int32(0); i < TOTAL_VEHICLS; i++ {
 		VEHICLES = append(VEHICLES, i)
 	}
-
-	fmt.Printf("동시진입차량: %d \n", VEHICLES)
 
 	if TOTAL_VEHICLS == 0 {
 		fmt.Printf("There are no vehicles entering at the same time.\n")
@@ -139,9 +174,7 @@ func main() {
 	}
 
 	if TOTAL_VEHICLS == 2 {
-		var vehicle_number1 int32 = int32(rand.Intn(1))
-		var vehicle_number2 int32 = int32(rand.Intn(1))
-		
+
 		// 서버를 각각의 고루틴에서 실행
 		for i := int32(0); i < TOTAL_VEHICLS; i++ {
 			go startServer(i)
@@ -150,27 +183,96 @@ func main() {
 		// 잠시 대기하여 서버가 시작될 시간 확보
 		time.Sleep(time.Second * 2)
 
-		// WaitGroup을 사용하여 모든 고루틴이 끝날 때까지 대기
-		var wg sync.WaitGroup
-		wg.Add(int(TOTAL_VEHICLS))
+		var vehicle_number1 int32 = int32(rand.Intn(2))
+		var vehicle_number2 int32 = int32(rand.Intn(2))
 
-		go func(i int32) {
-			defer wg.Done()
-			for j := int32(0); j < TOTAL_VEHICLS; j++ {
-				if i == j {
-					continue // 자기 자신에게는 요청을 보내지 않음
-				}
+		fmt.Printf("동시진입차량: %d \n", VEHICLES)
 
-		// var randomVehicle = rand.Intn(int(TOTAL_VEHICLS))
-		// VEHICLES = RemoveValue(VEHICLES, int32(randomVehicle))
-		// fmt.Printf("Address %d Vehicle passed \n", randomVehicle)
-		// if randomVehicle == 0 {
-		// 	VEHICLES = RemoveValue(VEHICLES, 1)
-		// 	fmt.Printf("Address %d Vehicle passed \n", 1)
-		// } else {
-		// 	VEHICLES = RemoveValue(VEHICLES, 0)
-		// 	fmt.Printf("Address %d Vehicle passed \n", 0)
-		// }
+		vehicles := []*pb.Vehicle{
+			{
+				Address:      0,
+				RandomNumber: vehicle_number1,
+			},
+			{
+				Address:      1,
+				RandomNumber: vehicle_number2,
+			},
+		}
+
+		fmt.Printf("랜덤 숫자: %d, %d\n", vehicle_number1, vehicle_number2)
+
+		// 서버 연결을 미리 설정
+		connections := make([]struct {
+			client pb.VehicleServiceClient
+			conn   *grpc.ClientConn
+			ctx    context.Context
+			cancel context.CancelFunc
+		}, TOTAL_VEHICLS)
+
+		for i := int32(0); i < TOTAL_VEHICLS; i++ {
+			addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+i)
+			client, conn, ctx, cancel, err := rpcConnectTo(addr)
+			if err != nil {
+				log.Fatalf("connect error: %v", err)
+			}
+			connections[i] = struct {
+				client pb.VehicleServiceClient
+				conn   *grpc.ClientConn
+				ctx    context.Context
+				cancel context.CancelFunc
+			}{client, conn, ctx, cancel}
+		}
+
+		for len(VEHICLES) > 0 {
+			var wg sync.WaitGroup
+			wg.Add(len(VEHICLES))
+
+			// 합의 상태 추적
+			var allVehiclesPassed bool
+
+			connData := connections[0]
+
+			r, err := connData.client.RandomAgreement(connData.ctx, &pb.Request{
+				Vehicle:       vehicles[0],
+				Port:          fmt.Sprintf("%d", GO_SERVER_PORT+0),
+				TotalVehicles: TOTAL_VEHICLS,
+				RandomNumber:  vehicles[1].RandomNumber,
+			})
+			if err != nil {
+				log.Fatalf("grpc call error: %v", err)
+			}
+
+			if r.Status == "pass" {
+				VEHICLES = RemoveValue(VEHICLES, 0)
+				fmt.Printf("Address %d Vehicle passed \n", 0)
+				remainingVehicle := VEHICLES[0]
+				VEHICLES = RemoveValue(VEHICLES, remainingVehicle)
+				fmt.Printf("Address %d Vehicle passed \n", remainingVehicle)
+				break
+
+			} else if r.Status == "wait" {
+				fmt.Printf("Address %d Vehicle has to wait \n", 0)
+				continue
+
+			} else if r.Status == "draw" {
+				vehicles[0].RandomNumber = int32(rand.Intn(2))
+				vehicles[1].RandomNumber = int32(rand.Intn(2))
+				fmt.Printf("랜덤 숫자: %d, %d\n", vehicles[0].RandomNumber, vehicles[1].RandomNumber)
+				continue
+			}
+
+			// 모든 차량이 통과했는지 확인
+			if len(VEHICLES) == 0 {
+				allVehiclesPassed = true
+			}
+			// 모든 고루틴이 완료될 때까지 대기
+			wg.Wait()
+
+			// 모든 차량이 통과했으면 종료
+			if allVehiclesPassed {
+				break
+			}
+		}
 		return
 	}
 

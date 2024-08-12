@@ -25,6 +25,7 @@ message Request {
   Vehicle vehicle = 1;    // 차량 정보
   string Port = 2;
   int32 total_vehicles = 3; // 총 차량 수
+  int32 RandomNumber = 4;
 }
 
 // Response 메시지 정의
@@ -36,6 +37,7 @@ message Response {
 
 service VehicleService {
   rpc ReceiveRequest (Request) returns (Response);
+  rpc RandomAgreement (Request) returns (Response);
 }
 
 // ConcurrentVehicle 메시지 정의
