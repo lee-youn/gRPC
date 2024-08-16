@@ -28,6 +28,7 @@ type server struct {
 	pb.UnimplementedVehicleServiceServer
 	Port    string
 	Vehicle *pb.Vehicle // 포트당 하나의 차량 정보를 저장
+	mu      sync.Mutex
 }
 
 // 서버 인스턴스 생성 및 초기화 후 실행
@@ -58,6 +59,9 @@ func startServer(address int32) {
 
 func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
 	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if s.Vehicle.SendVotes == 0 {
 		// 투표 응답 response
@@ -314,46 +318,50 @@ func main() {
 					continue // 자기 자신에게는 요청을 보내지 않음
 				}
 
-				addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+j)
-				client, conn, ctx, cancel, err := rpcConnectTo(addr)
-				if err != nil {
-					log.Fatalf("connect error: %v", err)
-				}
-				defer conn.Close()
-				defer cancel()
+				wg.Add(1) // 새로운 고루틴을 시작하므로 WaitGroup 카운터를 증가
+				go func(j int32) {
+					defer wg.Done()
 
-				r, err := client.ReceiveRequest(
-					ctx,
-					&pb.Request{
-						Vehicle: &pb.Vehicle{
-							Direction: "North",
-							Address:   i,
-						},
-
-						Port:          fmt.Sprintf("%d", GO_SERVER_PORT+i),
-						TotalVehicles: 3,
-					},
-				)
-				if err != nil {
-					log.Fatalf("grpc call error: %v", err)
-				}
-
-				// 투표가 "acknowledged"인 경우에만 ReceiveVotes를 증가
-				if r.Status == "acknowledged" {
-					dataMu.Lock()
-					vehicle, exists := serverData[i]
-					if !exists {
-						vehicle = &pb.Vehicle{
-							Address:      i,
-							ReceiveVotes: 1,
-						}
-						serverData[i] = vehicle
+					addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+j)
+					client, conn, ctx, cancel, err := rpcConnectTo(addr)
+					if err != nil {
+						log.Fatalf("connect error: %v", err)
 					}
-					vehicle.ReceiveVotes++
-					dataMu.Unlock()
-				}
+					defer conn.Close()
+					defer cancel()
 
-				log.Printf("Response from port %d: %v", GO_SERVER_PORT+j, r.Vehicle)
+					r, err := client.ReceiveRequest(
+						ctx,
+						&pb.Request{
+							Vehicle: &pb.Vehicle{
+								Direction: "North",
+								Address:   i,
+							},
+							Port:          fmt.Sprintf("%d", GO_SERVER_PORT+i),
+							TotalVehicles: 3,
+						},
+					)
+					if err != nil {
+						log.Fatalf("grpc call error: %v", err)
+					}
+
+					// 투표가 "acknowledged"인 경우에만 ReceiveVotes를 증가
+					if r.Status == "acknowledged" {
+						dataMu.Lock()
+						vehicle, exists := serverData[i]
+						if !exists {
+							vehicle = &pb.Vehicle{
+								Address:      i,
+								ReceiveVotes: 1,
+							}
+							serverData[i] = vehicle
+						}
+						vehicle.ReceiveVotes++
+						dataMu.Unlock()
+					}
+
+					log.Printf("Response from port %d: %v", GO_SERVER_PORT+j, r.Vehicle)
+				}(j)
 			}
 		}(i)
 	}
