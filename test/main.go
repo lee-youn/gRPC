@@ -155,8 +155,8 @@ var TOTAL_VEHICLS int32
 func main() {
 
 	// 교차로가 많아질수록? 5차선 6차선일 때 합의가 어려워짐..ㅠㅠ
-	// var randomNum int32 = int32(rand.Intn(3))
-	var TOTAL_VEHICLS int32 = 2
+	var randomNum int32 = int32(rand.Intn(5))
+	var TOTAL_VEHICLS int32 = randomNum
 
 	for i := int32(0); i < TOTAL_VEHICLS; i++ {
 		VEHICLES = append(VEHICLES, i)
@@ -223,6 +223,8 @@ func main() {
 			}{client, conn, ctx, cancel}
 		}
 
+		startTime := time.Now()
+
 		for len(VEHICLES) > 0 {
 			var wg sync.WaitGroup
 			wg.Add(len(VEHICLES))
@@ -252,7 +254,12 @@ func main() {
 
 			} else if r.Status == "wait" {
 				fmt.Printf("Address %d Vehicle has to wait \n", 0)
-				continue
+				VEHICLES = RemoveValue(VEHICLES, 1)
+				fmt.Printf("Address %d Vehicle passed \n", 1)
+				remainingVehicle := VEHICLES[0]
+				VEHICLES = RemoveValue(VEHICLES, remainingVehicle)
+				fmt.Printf("Address %d Vehicle passed \n", remainingVehicle)
+				break
 
 			} else if r.Status == "draw" {
 				vehicles[0].RandomNumber = int32(rand.Intn(2))
@@ -273,6 +280,10 @@ func main() {
 				break
 			}
 		}
+		endTime := time.Now()
+		duration := endTime.Sub(startTime)
+
+		fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
 		return
 	}
 
@@ -291,6 +302,8 @@ func main() {
 	// 모든 서버의 데이터를 저장할 맵
 	serverData := make(map[int32]*pb.Vehicle)
 	var dataMu sync.Mutex // 맵 접근을 위한 뮤텍스
+
+	startTime := time.Now()
 
 	// 각 서버에 요청 보내기
 	for i := int32(0); i < TOTAL_VEHICLS; i++ {
@@ -348,6 +361,9 @@ func main() {
 	// 모든 고루틴이 완료될 때까지 대기
 	wg.Wait()
 
+	endTime := time.Now()
+	duration := endTime.Sub(startTime)
+
 	// 최종 서버 데이터를 출력
 	fmt.Println("Final server data:")
 	dataMu.Lock()
@@ -359,6 +375,8 @@ func main() {
 		}
 	}
 	dataMu.Unlock()
+
+	fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
 
 	fmt.Printf("남은 차량: %d \n", VEHICLES)
 }
