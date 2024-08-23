@@ -169,11 +169,20 @@ func RemoveValue(slice []int32, valueToRemove int32) []int32 {
 
 var TOTAL_VEHICLS int32
 
+func Contains(slice []int32, item int32) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 
 	// 교차로가 많아질수록? 5차선 6차선일 때 합의가 어려워짐..ㅠㅠ
 	// var randomNum int32 = int32(rand.Intn(5))
-	var TOTAL_VEHICLS int32 = 3
+	var TOTAL_VEHICLS int32 = 4
 
 	for i := int32(0); i < TOTAL_VEHICLS; i++ {
 		VEHICLES = append(VEHICLES, i)
@@ -251,10 +260,11 @@ func main() {
 								var linked_covehicles []*pb.Vehicle
 								if direction.DirectionBoolean(covehicles[i].Direction, r.ResponseDirection) {
 									linked_covehicles = covehicles[i].Covehicle
-
-									if linked_covehicles != nil {
-										linked_covehicles = append(linked_covehicles, r.Vehicle)
-									}
+									linked_covehicles = append(linked_covehicles, r.Vehicle)
+									covehicles[i].Covehicle = linked_covehicles
+									// if linked_covehicles != nil {
+									// 	linked_covehicles = append(linked_covehicles, r.Vehicle)
+									// }
 								}
 							}
 
@@ -309,21 +319,53 @@ func main() {
 	// 모든 고루틴이 완료될 때까지 대기
 	wg.Wait()
 
-	endTime := time.Now()
-	duration := endTime.Sub(startTime)
-
 	// 최종 서버 데이터를 출력
 	fmt.Println("Final server data:")
 	dataMu.Lock()
+
+outerLoop:
 	for addr, vehicle := range serverData {
+
+		if !Contains(VEHICLES, vehicle.Address) {
+			continue
+		}
+
 		fmt.Printf("\n")
 		fmt.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
 		fmt.Printf("Covehicle: %s\n", vehicle.Covehicle)
+		for i := int32(0); i < int32(len(vehicle.Covehicle)); i++ {
+			if !Contains(VEHICLES, vehicle.Covehicle[i].Address) {
+				continue
+			}
+			fmt.Printf("Covehicle's: %s\n", vehicle.Covehicle[i])
+			fmt.Printf("Covehicle's covehicle: %s\n", vehicle.Covehicle[i].Covehicle)
+		}
 		if vehicle.ReceiveVotes == TOTAL_VEHICLS {
 			VEHICLES = RemoveValue(VEHICLES, vehicle.Address)
+			for i := int32(0); i < int32(len(vehicle.Covehicle)); i++ {
+				if !Contains(VEHICLES, vehicle.Covehicle[i].Address) {
+					continue
+				}
+
+				VEHICLES = RemoveValue(VEHICLES, vehicle.Covehicle[i].Address)
+				fmt.Printf("Address %d Vehicle passed \n", vehicle.Covehicle[i].Address)
+				for j := int32(0); j < int32(len(vehicle.Covehicle[i].Covehicle)); j++ {
+					if !Contains(VEHICLES, vehicle.Covehicle[i].Covehicle[j].Address) {
+						continue
+					}
+					VEHICLES = RemoveValue(VEHICLES, vehicle.Covehicle[i].Covehicle[j].Address)
+					fmt.Printf("Address %d Vehicle passed \n", vehicle.Covehicle[i].Covehicle[j].Address)
+				}
+			}
 			fmt.Printf("Address %d Vehicle passed \n", vehicle.Address)
+			if len(VEHICLES) == 0 {
+				break outerLoop
+			}
 		}
 	}
+	endTime := time.Now()
+	duration := endTime.Sub(startTime)
+
 	dataMu.Unlock()
 
 	fmt.Printf("\n")
