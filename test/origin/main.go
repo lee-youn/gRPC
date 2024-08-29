@@ -1,4 +1,4 @@
-package main
+package origin
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	pb "test/server/proto" // 패키지 경로 확인
+	pb "origin/server/proto" // 패키지 경로 확인
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -60,6 +60,7 @@ func startServer(address int32) {
 func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
 	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
 
+	// 동시에 접근 못하게 함(즉, 동시에 request가 도착하는 일 없음)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -1,10 +1,12 @@
-module test
+module opencv
 
 go 1.22.5
 
 require (
+	github.com/otiai10/gosseract/v2 v2.4.1
+	gocv.io/x/gocv v0.37.0
 	google.golang.org/grpc v1.65.0
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/protobuf v1.34.1
 )
 
 require (

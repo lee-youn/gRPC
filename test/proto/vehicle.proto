@@ -16,7 +16,7 @@ message Vehicle {
   int32 address = 3;      // 주소
   int32 send_votes = 4;        // 보내는 투표 수
   int32 receive_votes = 5; // 받은 투표 수    
-  repeated ConcurrentVehicle covehicle = 6; // 같은 방향 차량
+  repeated Vehicle covehicle = 6; // 같은 방향 차량
   int32 random_number = 7;
 }
 
@@ -32,7 +32,9 @@ message Request {
 message Response {
   string message = 1;
   string status = 2;
-  Vehicle vehicle = 3; // Vehicle 정보를 포함
+  string direction_status = 3;
+  string response_direction = 4;
+  Vehicle vehicle = 5; // Vehicle 정보를 포함
 }
 
 service VehicleService {

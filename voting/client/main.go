@@ -83,19 +83,16 @@ func main() {
 	err = client.Call("VehicleRPC.GetVehicles", struct{}{}, &reply)
 	if err != nil {
 		fmt.Printf("RPC call error to vehicle at %s: %v\n", targetAddress, err)
-		return
 	}
-
 	fmt.Printf("Received vehicles from server: %v\n", reply.Vehicles)
 
-	// Send requests to other vehicles
 	var wg sync.WaitGroup
 	for i := 0; i < len(reply.Vehicles); i++ {
-		if i != vehicleAddress {
-			wg.Add(1)
-			go sendRequest(vehicle, fmt.Sprintf("localhost:%d", 8000+i), len(reply.Vehicles), &wg)
-		}
+		wg.Add(1)
+		go sendRequest(vehicle, fmt.Sprintf("localhost:%d", 8000+i), len(reply.Vehicles), &wg)
 	}
+
 	wg.Wait()
+
 	fmt.Println("All requests have been sent.")
 }

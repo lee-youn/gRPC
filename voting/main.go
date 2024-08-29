@@ -32,7 +32,7 @@ type ConcurrentVehicle struct {
 
 type VehicleRPC struct {
 	Address               int
-	Vehicles              []Vehicle
+	Vehicles              map[int]*Vehicle
 	TotalVehicles         int
 	VoteCount             int
 	ConcurrentVehicleList *ConcurrentVehicle
@@ -42,7 +42,16 @@ type VehicleRPC struct {
 func (v *VehicleRPC) GetVehicles(req struct{}, reply *Response) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	reply.Vehicles = v.Vehicles
+
+	// Convert the map of vehicles to a slice
+	vehicles := make([]Vehicle, 0, len(v.Vehicles))
+	for _, vehicle := range v.Vehicles {
+		if vehicle != nil { // Ensure we don't dereference a nil pointer
+			vehicles = append(vehicles, *vehicle) // Dereference the pointer to get the Vehicle value
+		}
+	}
+	reply.Vehicles = vehicles
+
 	return nil
 }
 
@@ -50,11 +59,17 @@ func (v *VehicleRPC) SendRequest(req Request, reply *Response) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	fmt.Printf("Vehicle %d received request: %v\n", v.Address, req.Vehicle)
+	fmt.Printf("Received request for vehicle: %v\n", req.Vehicle)
 
-	req.Vehicle.Votes++
-	fmt.Println(req.Vehicle)
+	// Increment votes for the vehicle if it exists
+	if vehicle, exists := v.Vehicles[req.Vehicle.Address]; exists {
+		vehicle.Votes++
+		fmt.Printf("Updated vehicle %d votes to %d\n", vehicle.Address, vehicle.Votes)
+	} else {
+		fmt.Printf("Vehicle %d not found in the system.\n", req.Vehicle.Address)
+	}
 
+	// Prepare to send RPC requests to other vehicles
 	var wg sync.WaitGroup
 	var requestVehicles []Vehicle
 
@@ -63,7 +78,10 @@ func (v *VehicleRPC) SendRequest(req Request, reply *Response) error {
 			address := fmt.Sprintf("localhost:%d", 8000+i)
 			fmt.Printf("Vehicle %d attempting to connect to vehicle %d at %s\n", req.Vehicle.Address, i, address)
 
-			requestVehicles = append(requestVehicles, v.Vehicles[i])
+			// Check if the vehicle exists before attempting to append
+			if vehicle, exists := v.Vehicles[i]; exists {
+				requestVehicles = append(requestVehicles, *vehicle) // Dereference the pointer to get Vehicle value
+			}
 
 			wg.Add(1)
 			go func(addr string, vehicleAddr int) {
@@ -78,18 +96,20 @@ func (v *VehicleRPC) SendRequest(req Request, reply *Response) error {
 
 				fmt.Printf("Attempting RPC call to vehicle %d at %s\n", vehicleAddr, addr)
 
-				var response Response
-				req := Request{
-					Vehicle:       v.Vehicles[vehicleAddr],
-					TotalVehicles: req.TotalVehicles,
-				}
+				go func() {
+					var response Response
+					req := Request{
+						Vehicle:       *v.Vehicles[req.Vehicle.Address],
+						TotalVehicles: req.TotalVehicles,
+					}
 
-				err = client.Call("VehicleRPC.SendResponse", req, &response)
-				if err != nil {
-					fmt.Printf("RPC call error to vehicle %d: %v\n", vehicleAddr, err)
-				} else {
-					fmt.Printf("Successfully sent response to vehicle %d.\n", vehicleAddr)
-				}
+					err = client.Call("VehicleRPC.SendResponse", req, &response)
+					if err != nil {
+						fmt.Printf("RPC call error to vehicle %d: %v\n", vehicleAddr, err)
+					} else {
+						fmt.Printf("Successfully sent response to vehicle %d.\n", vehicleAddr)
+					}
+				}()
 			}(address, i)
 		}
 	}
@@ -149,7 +169,7 @@ func canPassTogether(direction1, direction2 string) bool {
 	return direction1 == direction2
 }
 
-func startServer(address int, vehicles []Vehicle, totalVehicles int) {
+func startServer(address int, vehicles map[int]*Vehicle, totalVehicles int) {
 	vehicleRPC := &VehicleRPC{
 		Address:       address,
 		Vehicles:      vehicles,
@@ -176,17 +196,16 @@ func startServer(address int, vehicles []Vehicle, totalVehicles int) {
 }
 
 func main() {
-	vehicles := []Vehicle{
-		{Number: "1", Direction: "N", Address: 0, Votes: 0},
-		{Number: "2", Direction: "S", Address: 1, Votes: 0},
-		{Number: "3", Direction: "E", Address: 2, Votes: 0},
-	}
+	totalVehicles := 3
 
-	totalVehicles := len(vehicles)
-
+	// Initialize vehicles for each server
 	for i := 0; i < totalVehicles; i++ {
+		vehicles := make(map[int]*Vehicle)
+		for j := 0; j < totalVehicles; j++ {
+			vehicles[j] = &Vehicle{Number: fmt.Sprintf("%d", j+1), Direction: "N", Address: j, Votes: 0}
+		}
 		go startServer(i, vehicles, totalVehicles)
 	}
 
-	time.Sleep(80 * time.Second) // 충분한 시간 대기
+	time.Sleep(80 * time.Second) // Wait enough time for all servers to start and run
 }
