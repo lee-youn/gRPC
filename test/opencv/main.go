@@ -1,176 +1,25 @@
 package main
 
 import (
-	"encoding/xml"
+	"context"
 	"fmt"
-	"image"
-	"image/color"
-	"io/ioutil"
 	"log"
-	"os"
-	"runtime"
+	"math/rand"
+	"net"
+	"sync"
 	"time"
 
-	"github.com/otiai10/gosseract/v2"
+	licenseplate "opencv/licensePlate"
+	pb "opencv/server/proto" // 패키지 경로 확인
 
-	"gocv.io/x/gocv"
-	// 패키지 경로 확인
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const GO_SERVER_PORT = 5005
 
 var VEHICLES []int32
 
-////////////////////////////////////////
-/////////////////SERVER/////////////////
-////////////////////////////////////////
-
-// // 서버 구조체 정의
-// type server struct {
-// 	pb.UnimplementedVehicleServiceServer
-// 	Port    string
-// 	Vehicle *pb.Vehicle // 포트당 하나의 차량 정보를 저장
-// 	mu      sync.Mutex
-// }
-
-// // 서버 인스턴스 생성 및 초기화 후 실행
-// func startServer(address int32, direction string) {
-// 	// 서버 인스턴스 생성 및 초기화
-// 	s := &server{
-// 		Port:    fmt.Sprintf("%d", GO_SERVER_PORT+address),           // 포트 번호를 문자열로 변환
-// 		Vehicle: &pb.Vehicle{Address: address, Direction: direction}, // 기본 차량 정보로 초기화
-// 	}
-
-// 	// TCP 리스너 생성
-// 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", GO_SERVER_PORT+address))
-// 	if err != nil {
-// 		log.Fatalf("failed to listen: %v", err)
-// 	}
-// 	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+address)
-
-// 	// gRPC 서버 생성
-// 	grpcServer := grpc.NewServer()
-// 	pb.RegisterVehicleServiceServer(grpcServer, s)
-
-// 	// 서버 시작 (차단 함수)
-// 	if err := grpcServer.Serve(lis); err != nil {
-// 		log.Fatalf("failed to serve: %v", err)
-// 	}
-
-// }
-
-// func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-// 	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
-
-// 	// 동시에 접근 못하게 함(즉, 동시에 request가 도착하는 일 없음)
-// 	s.mu.Lock()
-// 	defer s.mu.Unlock()
-
-// 	fmt.Printf("Port %s direction : %s\n", s.Port, s.Vehicle.Direction)
-// 	fmt.Printf("Port %s direction : %s\n", req.Port, req.Vehicle.Direction)
-
-// 	if s.Vehicle.SendVotes == 0 {
-// 		// 투표 응답을 처리하는 경우
-// 		fmt.Printf("Vehicle %d received request from port %s: %v\n", s.Vehicle.Address, req.Port, req.Vehicle)
-// 		s.Vehicle.SendVotes = 1 // 투표 완료로 설정
-
-// 		response := &pb.Response{
-// 			Message:           fmt.Sprintf("Vote registered from port %s to port %s", req.Port, s.Port),
-// 			Status:            "acknowledged",
-// 			ResponseDirection: s.Vehicle.Direction,
-// 			Vehicle:           s.Vehicle, // 현재 서버의 차량 정보를 포함
-// 		}
-
-// 		return response, nil
-// 	} else {
-// 		// 이미 투표한 경우
-// 		fmt.Printf("Vehicle %d has already responded to a request.\n", s.Vehicle.Address)
-
-// 		// 응답 메시지 작성
-// 		response := &pb.Response{
-// 			Message: fmt.Sprintf("Vehicle %d has already voted", s.Vehicle.Address),
-// 			Status:  "ignored",
-// 			Vehicle: s.Vehicle, // 현재 서버의 차량 정보를 포함
-// 		}
-
-// 		return response, nil
-// 	}
-// }
-
-// func (s *server) RandomAgreement(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-// 	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
-
-// 	s.Vehicle.RandomNumber = req.RandomNumber
-
-// 	var response *pb.Response
-
-// 	if req.Vehicle.RandomNumber == s.Vehicle.RandomNumber {
-// 		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-// 		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-// 		fmt.Printf("Cannot reach an agreement.\n")
-// 		response = &pb.Response{
-// 			Message: fmt.Sprintf("Cannot reach an agreement"),
-// 			Status:  "draw",
-// 		}
-// 	} else if req.Vehicle.RandomNumber > s.Vehicle.RandomNumber {
-// 		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-// 		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-// 		fmt.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
-// 		response = &pb.Response{
-// 			Message: fmt.Sprintf("Vehicle %d may pass first.", req.Vehicle.Address),
-// 			Status:  "pass",
-// 		}
-// 	} else {
-// 		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-// 		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-// 		fmt.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
-// 		response = &pb.Response{
-// 			Message: fmt.Sprintf("Vehicle %d has to wait.", req.Vehicle.Address),
-// 			Status:  "wait",
-// 		}
-// 	}
-
-// 	return response, nil
-// }
-
-// ////////////////////////////////////////
-// /////////////////CLIENT/////////////////
-// ////////////////////////////////////////
-
-// func rpcConnectTo(ip string) (pb.VehicleServiceClient, *grpc.ClientConn, context.Context, context.CancelFunc, error) {
-// 	conn, err := grpc.Dial(
-// 		ip,
-// 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-// 	)
-// 	if err != nil {
-// 		return nil, nil, nil, nil, fmt.Errorf("did not connect: %v", err)
-// 	}
-
-// 	c := pb.NewVehicleServiceClient(conn)
-// 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-// 	return c, conn, ctx, cancel, nil
-// }
-
-// func RemoveValue(slice []int32, valueToRemove int32) []int32 {
-// 	result := []int32{}
-// 	for _, value := range slice {
-// 		if value != valueToRemove {
-// 			result = append(result, value)
-// 		}
-// 	}
-// 	return result
-// }
-
-// var TOTAL_VEHICLS int32
-
-//	func Contains(slice []int32, item int32) bool {
-//		for _, v := range slice {
-//			if v == item {
-//				return true
-//			}
-//		}
-//		return false
-//	}
 type BndBox struct {
 	Xmin int `xml:"xmin"`
 	Ymin int `xml:"ymin"`
@@ -191,99 +40,290 @@ type Annotation struct {
 	Objects  []Object `xml:"object"`
 }
 
+////////////////////////////////////////
+/////////////////SERVER/////////////////
+////////////////////////////////////////
+
+// 서버 구조체 정의
+type server struct {
+	pb.UnimplementedVehicleServiceServer
+	Port    string
+	Vehicle *pb.Vehicle // 포트당 하나의 차량 정보를 저장
+	mu      sync.Mutex
+}
+
+// 서버 인스턴스 생성 및 초기화 후 실행
+func startServer(address int32, license int32) {
+	// 서버 인스턴스 생성 및 초기화
+	s := &server{
+		Port:    fmt.Sprintf("%d", GO_SERVER_PORT+address),            // 포트 번호를 문자열로 변환
+		Vehicle: &pb.Vehicle{Address: address, LicensePlate: license}, // 기본 차량 정보로 초기화
+	}
+
+	// TCP 리스너 생성
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", GO_SERVER_PORT+address))
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+address)
+
+	// gRPC 서버 생성
+	grpcServer := grpc.NewServer()
+	pb.RegisterVehicleServiceServer(grpcServer, s)
+
+	// 서버 시작 (차단 함수)
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+
+}
+
+func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
+	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+
+	// 동시에 접근 못하게 함(즉, 동시에 request가 도착하는 일 없음)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	vehicle1License := fmt.Sprintf("%d", s.Vehicle.LicensePlate)
+	vehicle2License := fmt.Sprintf("%d", req.Vehicle.LicensePlate)
+
+	fmt.Printf("Port %s license : %s\n", s.Port, vehicle1License)
+	fmt.Printf("Port %s license : %s\n", req.Port, vehicle2License)
+
+	fmt.Printf("Vehicle %d received request from port %s: %v\n", s.Vehicle.Address, req.Port, req.Vehicle)
+
+	// 방향의 유효성을 검사하고 응답 메시지 작성
+	PassStatus := "False"
+	if licenseplate.LicensePlateComparison(vehicle2License, vehicle1License) {
+		PassStatus = "True"
+
+		response := &pb.Response{
+			Message:         fmt.Sprintf("Vote registered from port %s to port %s", req.Port, s.Port),
+			Status:          "passed",
+			DirectionStatus: PassStatus,
+			Vehicle:         s.Vehicle, // 현재 서버의 차량 정보를 포함
+		}
+
+		return response, nil
+	} else {
+		response := &pb.Response{
+			Message:         fmt.Sprintf("Vote registered from port %s to port %s", req.Port, s.Port),
+			Status:          "ignored",
+			DirectionStatus: PassStatus,
+			Vehicle:         s.Vehicle, // 현재 서버의 차량 정보를 포함
+		}
+		return response, nil
+	}
+}
+
+func (s *server) RandomAgreement(ctx context.Context, req *pb.Request) (*pb.Response, error) {
+	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+
+	s.Vehicle.RandomNumber = req.RandomNumber
+
+	var response *pb.Response
+
+	if req.Vehicle.RandomNumber == s.Vehicle.RandomNumber {
+		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		fmt.Printf("Cannot reach an agreement.\n")
+		response = &pb.Response{
+			Message: fmt.Sprintf("Cannot reach an agreement"),
+			Status:  "draw",
+		}
+	} else if req.Vehicle.RandomNumber > s.Vehicle.RandomNumber {
+		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		fmt.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
+		response = &pb.Response{
+			Message: fmt.Sprintf("Vehicle %d may pass first.", req.Vehicle.Address),
+			Status:  "pass",
+		}
+	} else {
+		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		fmt.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
+		response = &pb.Response{
+			Message: fmt.Sprintf("Vehicle %d has to wait.", req.Vehicle.Address),
+			Status:  "wait",
+		}
+	}
+
+	return response, nil
+}
+
+////////////////////////////////////////
+/////////////////CLIENT/////////////////
+////////////////////////////////////////
+
+func rpcConnectTo(ip string) (pb.VehicleServiceClient, *grpc.ClientConn, context.Context, context.CancelFunc, error) {
+	conn, err := grpc.Dial(
+		ip,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("did not connect: %v", err)
+	}
+
+	c := pb.NewVehicleServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	return c, conn, ctx, cancel, nil
+}
+
+func RemoveValue(slice []int32, valueToRemove int32) []int32 {
+	result := []int32{}
+	for _, value := range slice {
+		if value != valueToRemove {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+var TOTAL_VEHICLS int32
+
+func Contains(slice []int32, item int32) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
+
+	// 교차로가 많아질수록? 5차선 6차선일 때 합의가 어려워짐..ㅠㅠ
+	// var randomNum int32 = int32(rand.Intn(5))
+	var TOTAL_VEHICLS int32 = 5
+
+	for i := int32(0); i < TOTAL_VEHICLS; i++ {
+		VEHICLES = append(VEHICLES, i)
+	}
+
+	var vehicle_license_list []int32 // 방향 저장 리스트
+
+	// 서버를 각각의 고루틴에서 실행
+	for i := int32(0); i < TOTAL_VEHICLS; i++ {
+		vehicle_license_list = append(vehicle_license_list, int32(rand.Intn(249)+1))
+		go startServer(i, vehicle_license_list[i]) // 랜덤 방향 같이 전달
+	}
+
+	// 잠시 대기하여 서버가 시작될 시간 확보
+	time.Sleep(time.Second * 2)
+
+	// WaitGroup을 사용하여 모든 고루틴이 끝날 때까지 대기
+	var wg sync.WaitGroup
+	wg.Add(int(TOTAL_VEHICLS))
+
+	// 모든 서버의 데이터를 저장할 맵
+	serverData := make(map[int32]*pb.Vehicle)
+	var dataMu sync.Mutex // 맵 접근을 위한 뮤텍스
+
 	startTime := time.Now()
 
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	model := "models/yolov4.weights"
-	config := "models/yolov4.cfg"
-
-	net := gocv.ReadNet(model, config)
-	if net.Empty() {
-		log.Fatalf("Error reading network model from: %v %v", model, config)
-	}
-
-	imagePath := "images/N2.jpeg"
-	img := gocv.IMRead(imagePath, gocv.IMReadColor)
-	if img.Empty() {
-		log.Fatalf("이미지를 읽지 못했습니다: %s", imagePath)
-	}
-	defer img.Close()
-
-	fmt.Printf("이미지 로드 성공 \n")
-
-	// Load XML file with license plate coordinates
-	xmlFile, err := os.Open("images/N2.xml")
-	if err != nil {
-		log.Fatalf("Failed to open XML file: %v\n", err)
-	}
-	defer xmlFile.Close()
-
-	xmlData, err := ioutil.ReadAll(xmlFile)
-	if err != nil {
-		log.Fatalf("Failed to read XML file: %v\n", err)
-	}
-
-	var annotation Annotation
-	err = xml.Unmarshal(xmlData, &annotation)
-	if err != nil {
-		log.Fatalf("XML 파싱 실패: %v\n", err)
-	}
-
-	// Tesseract 클라이언트 초기화
-	client := gosseract.NewClient()
-	defer client.Close()
-
-	// Iterate through the plates found in the XML
-	// XML에서 발견된 객체를 순회
-	for _, obj := range annotation.Objects {
-		if obj.Name == "num_plate" {
-			left := obj.BndBox.Xmin
-			top := obj.BndBox.Ymin
-			right := obj.BndBox.Xmax
-			bottom := obj.BndBox.Ymax
-
-			// 바운딩 박스 그리기
-			gocv.Rectangle(&img, image.Rect(left, top, right, bottom), color.RGBA{0, 255, 0, 0}, 2)
-
-			// 이미지에서 번호판 잘라내기
-			croppedPlate := img.Region(image.Rect(left, top, right, bottom))
-			if croppedPlate.Empty() {
-				fmt.Println("잘린 번호판 이미지가 비어 있습니다.")
-			} else {
-				fmt.Printf("잘린 번호판 이미지 존재: left=%d, top=%d, right=%d, bottom=%d\n", left, top, right, bottom)
-
-				// 잘린 번호판 이미지를 바이트로 인코딩
-				plateBytes, err := gocv.IMEncode(gocv.JPEGFileExt, croppedPlate)
-				if err != nil {
-					log.Fatalf("번호판 이미지 인코딩 실패: %v\n", err)
+	// 각 서버에 요청 보내기
+	for i := int32(0); i < TOTAL_VEHICLS; i++ {
+		go func(i int32) {
+			defer wg.Done()
+			for j := int32(0); j < TOTAL_VEHICLS; j++ {
+				if i == j {
+					continue // 자기 자신에게는 요청을 보내지 않음
 				}
 
-				// Tesseract OCR로 텍스트 인식
-				client.SetImageFromBytes(plateBytes.GetBytes())
-				text, err := client.Text()
-				if err != nil {
-					log.Fatalf("텍스트 인식 실패: %v\n", err)
+				wg.Add(1) // 새로운 고루틴을 시작하므로 WaitGroup 카운터를 증가
+				go func(j int32) {
+					defer wg.Done()
+
+					addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+j)
+					client, conn, ctx, cancel, err := rpcConnectTo(addr)
+					if err != nil {
+						log.Fatalf("connect error: %v", err)
+					}
+					defer conn.Close()
+					defer cancel()
+
+					r, err := client.ReceiveRequest(
+						ctx,
+						&pb.Request{
+							Vehicle: &pb.Vehicle{
+								Address:      i,
+								LicensePlate: vehicle_license_list[i],
+							},
+							Port:          fmt.Sprintf("%d", GO_SERVER_PORT+i),
+							TotalVehicles: TOTAL_VEHICLS,
+						},
+					)
+					if err != nil {
+						log.Fatalf("grpc call error: %v", err)
+					}
+
+					// 투표가 "acknowledged"인 경우에만 ReceiveVotes를 증가
+					if r.Status == "passed" {
+						dataMu.Lock()
+						vehicle, exists := serverData[i]
+						if !exists {
+							vehicle = &pb.Vehicle{
+								Address:      i,
+								ReceiveVotes: 0,
+							}
+							serverData[i] = vehicle
+						}
+						vehicle.ReceiveVotes++
+						dataMu.Unlock()
+					} else {
+						dataMu.Lock()
+						vehicle, exists := serverData[i]
+						if !exists {
+							vehicle = &pb.Vehicle{
+								Address:      i,
+								ReceiveVotes: 0,
+							}
+							serverData[i] = vehicle
+						}
+						dataMu.Unlock()
+					}
+
+					// log.Printf("Response from port %d: %v", GO_SERVER_PORT+j, r.Vehicle)
+				}(j)
+			}
+		}(i)
+	}
+
+	// 모든 고루틴이 완료될 때까지 대기
+	wg.Wait()
+
+	// 최종 서버 데이터를 출력
+	fmt.Println("Final server data:")
+	dataMu.Lock()
+
+outerLoop:
+	for len(VEHICLES) > 0 {
+		for addr, vehicle := range serverData {
+			if !Contains(VEHICLES, vehicle.Address) {
+				continue
+			}
+
+			fmt.Printf("\n")
+			fmt.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
+			if vehicle.ReceiveVotes == TOTAL_VEHICLS-1 {
+				VEHICLES = RemoveValue(VEHICLES, vehicle.Address)
+				TOTAL_VEHICLS -= 1
+				fmt.Printf("Address %d Vehicle passed \n", vehicle.Address)
+				if len(VEHICLES) == 0 {
+					break outerLoop
 				}
-
-				// 인식된 텍스트 출력
-				fmt.Printf("인식된 번호판: %s\n", text)
-
-				// 이미지에 인식된 텍스트 표시
-				gocv.PutText(&img, text, image.Pt(left, top-10), gocv.FontHersheyPlain, 2.0, color.RGBA{255, 0, 0, 0}, 2)
 			}
 		}
 	}
 
-	// 결과 이미지 표시
-	window := gocv.NewWindow("Detected License Plate")
-	defer window.Close()
+	endTime := time.Now()
+	duration := endTime.Sub(startTime)
 
-	window.IMShow(img)
+	dataMu.Unlock()
 
-	elapsedTime := time.Since(startTime)
-	fmt.Printf("프로그램 실행 시간: %s\n", elapsedTime)
-	return
+	fmt.Printf("\n")
+	fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
+
+	fmt.Printf("남은 차량: %d \n", VEHICLES)
 }

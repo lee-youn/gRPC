@@ -182,7 +182,7 @@ func main() {
 
 	// 교차로가 많아질수록? 5차선 6차선일 때 합의가 어려워짐..ㅠㅠ
 	// var randomNum int32 = int32(rand.Intn(5))
-	var TOTAL_VEHICLS int32 = 4
+	var TOTAL_VEHICLS int32 = 5
 
 	for i := int32(0); i < TOTAL_VEHICLS; i++ {
 		VEHICLES = append(VEHICLES, i)

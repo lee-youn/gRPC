@@ -18,6 +18,7 @@ message Vehicle {
   int32 receive_votes = 5; // 받은 투표 수    
   repeated Vehicle covehicle = 6; // 같은 방향 차량
   int32 random_number = 7;
+  int32 license_plate = 8;
 }
 
 // Request 메시지 정의

@@ -33,7 +33,7 @@ func DirectionBoolean(key string, value string) bool {
 		directionMaps[k] = SliceToMap(v)
 	}
 
-	if directionMaps["Rs"]["Ls"] {
+	if directionMaps[key][value] {
 		return true
 	} else {
 		return false
