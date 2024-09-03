@@ -88,14 +88,12 @@ func LicensePlate(value string) string {
 	// Iterate through the plates found in the XML
 	// XML에서 발견된 객체를 순회
 	for _, obj := range annotation.Objects {
-		fmt.Printf("반복문 성공\n")
 		fmt.Printf("Object Name: %s\n", obj.Name)
 		if obj.Name == "number_plate" {
 			left := obj.BndBox.Xmin
 			top := obj.BndBox.Ymin
 			right := obj.BndBox.Xmax
 			bottom := obj.BndBox.Ymax
-			fmt.Printf("여기도 되나\n")
 
 			// 바운딩 박스 그리기
 			gocv.Rectangle(&img, image.Rect(left, top, right, bottom), color.RGBA{0, 255, 0, 0}, 2)
