@@ -56,16 +56,16 @@ type server struct {
 func startServer(address int32, license int32) {
 	// 서버 인스턴스 생성 및 초기화
 	s := &server{
-		Port:    fmt.Sprintf("%d", GO_SERVER_PORT+address),            // 포트 번호를 문자열로 변환
+		Port:    fmt.Sprintf("%d", GO_SERVER_PORT+int(address)),       // 포트 번호를 문자열로 변환
 		Vehicle: &pb.Vehicle{Address: address, LicensePlate: license}, // 기본 차량 정보로 초기화
 	}
 
 	// TCP 리스너 생성
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", GO_SERVER_PORT+address))
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", GO_SERVER_PORT+int(address)))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+address)
+	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
 
 	// gRPC 서버 생성
 	grpcServer := grpc.NewServer()
@@ -221,6 +221,7 @@ func main() {
 	var dataMu sync.Mutex // 맵 접근을 위한 뮤텍스
 
 	startTime := time.Now()
+	var count = 0
 
 	// 각 서버에 요청 보내기
 	for i := int32(0); i < TOTAL_VEHICLS; i++ {
@@ -254,6 +255,7 @@ func main() {
 							TotalVehicles: TOTAL_VEHICLS,
 						},
 					)
+					count++
 					if err != nil {
 						log.Fatalf("grpc call error: %v", err)
 					}
@@ -326,4 +328,5 @@ outerLoop:
 	fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
 
 	fmt.Printf("남은 차량: %d \n", VEHICLES)
+	fmt.Printf("번호판 비교 횟수: %d\n", count)
 }

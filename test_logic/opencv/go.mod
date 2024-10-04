@@ -1,0 +1,22 @@
+module opencv
+
+go 1.22.5
+
+require (
+	github.com/otiai10/gosseract/v2 v2.4.1
+	gocv.io/x/gocv v0.38.0
+	google.golang.org/grpc v1.67.0
+	google.golang.org/protobuf v1.34.2
+)
+
+require (
+	github.com/gofrs/uuid v4.0.0+incompatible // indirect
+	github.com/hashicorp/errwrap v1.0.0 // indirect
+	github.com/hashicorp/go-multierror v1.0.0 // indirect
+	github.com/otiai10/gosseract v2.2.1+incompatible // indirect
+	gobot.io/x/gobot v1.16.0 // indirect
+	golang.org/x/net v0.28.0 // indirect
+	golang.org/x/sys v0.24.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240814211410-ddb44dafa142 // indirect
+)
