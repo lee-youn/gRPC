@@ -42,7 +42,7 @@ func startServer(address int32) {
 	// TCP 리스너 생성
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", GO_SERVER_PORT+int(address)))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Printf("failed to listen: %v", err)
 	}
 	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
 
@@ -52,7 +52,7 @@ func startServer(address int32) {
 
 	// 서버 시작 (차단 함수)
 	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		log.Printf("failed to serve: %v", err)
 	}
 
 }
@@ -155,33 +155,33 @@ func RemoveValue(slice []int32, valueToRemove int32) []int32 {
 	return result
 }
 
-var TOTAL_VEHICLS int32
+var TOTAL_VEHICLES int32
 
 func main() {
 
 	// 교차로가 많아질수록? 5차선 6차선일 때 합의가 어려워짐..ㅠㅠ
 	var randomNum int32 = int32(rand.Intn(5))
-	var TOTAL_VEHICLS int32 = randomNum
+	var TOTAL_VEHICLES int32 = randomNum
 
-	for i := int32(0); i < TOTAL_VEHICLS; i++ {
+	for i := int32(0); i < TOTAL_VEHICLES; i++ {
 		VEHICLES = append(VEHICLES, i)
 	}
 
-	if TOTAL_VEHICLS == 0 {
+	if TOTAL_VEHICLES == 0 {
 		fmt.Printf("There are no vehicles entering at the same time.\n")
 		return
 	}
 
-	if TOTAL_VEHICLS == 1 {
+	if TOTAL_VEHICLES == 1 {
 		fmt.Printf("Address %d Vehicle passed \n", 0)
 		VEHICLES = RemoveValue(VEHICLES, 0)
 		return
 	}
 
-	if TOTAL_VEHICLS == 2 {
+	if TOTAL_VEHICLES == 2 {
 
 		// 서버를 각각의 고루틴에서 실행
-		for i := int32(0); i < TOTAL_VEHICLS; i++ {
+		for i := int32(0); i < TOTAL_VEHICLES; i++ {
 			go startServer(i)
 		}
 
@@ -212,13 +212,13 @@ func main() {
 			conn   *grpc.ClientConn
 			ctx    context.Context
 			cancel context.CancelFunc
-		}, TOTAL_VEHICLS)
+		}, TOTAL_VEHICLES)
 
-		for i := int32(0); i < TOTAL_VEHICLS; i++ {
+		for i := int32(0); i < TOTAL_VEHICLES; i++ {
 			addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+i)
 			client, conn, ctx, cancel, err := rpcConnectTo(addr)
 			if err != nil {
-				log.Fatalf("connect error: %v", err)
+				log.Printf("connect error: %v", err)
 			}
 			connections[i] = struct {
 				client pb.VehicleServiceClient
@@ -242,11 +242,11 @@ func main() {
 			r, err := connData.client.RandomAgreement(connData.ctx, &pb.Request{
 				Vehicle:       vehicles[0],
 				Port:          fmt.Sprintf("%d", GO_SERVER_PORT+0),
-				TotalVehicles: TOTAL_VEHICLS,
+				TotalVehicles: TOTAL_VEHICLES,
 				RandomNumber:  vehicles[1].RandomNumber,
 			})
 			if err != nil {
-				log.Fatalf("grpc call error: %v", err)
+				log.Printf("grpc call error: %v", err)
 			}
 
 			if r.Status == "pass" {
@@ -293,7 +293,7 @@ func main() {
 	}
 
 	// 서버를 각각의 고루틴에서 실행
-	for i := int32(0); i < TOTAL_VEHICLS; i++ {
+	for i := int32(0); i < TOTAL_VEHICLES; i++ {
 		go startServer(i)
 	}
 
@@ -302,7 +302,7 @@ func main() {
 
 	// WaitGroup을 사용하여 모든 고루틴이 끝날 때까지 대기
 	var wg sync.WaitGroup
-	wg.Add(int(TOTAL_VEHICLS))
+	wg.Add(int(TOTAL_VEHICLES))
 
 	// 모든 서버의 데이터를 저장할 맵
 	serverData := make(map[int32]*pb.Vehicle)
@@ -311,10 +311,10 @@ func main() {
 	startTime := time.Now()
 
 	// 각 서버에 요청 보내기
-	for i := int32(0); i < TOTAL_VEHICLS; i++ {
+	for i := int32(0); i < TOTAL_VEHICLES; i++ {
 		go func(i int32) {
 			defer wg.Done()
-			for j := int32(0); j < TOTAL_VEHICLS; j++ {
+			for j := int32(0); j < TOTAL_VEHICLES; j++ {
 				if i == j {
 					continue // 자기 자신에게는 요청을 보내지 않음
 				}
@@ -326,7 +326,7 @@ func main() {
 					addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+j)
 					client, conn, ctx, cancel, err := rpcConnectTo(addr)
 					if err != nil {
-						log.Fatalf("connect error: %v", err)
+						log.Printf("connect error: %v", err)
 					}
 					defer conn.Close()
 					defer cancel()
@@ -343,7 +343,7 @@ func main() {
 						},
 					)
 					if err != nil {
-						log.Fatalf("grpc call error: %v", err)
+						log.Printf("grpc call error: %v", err)
 					}
 
 					// 투표가 "acknowledged"인 경우에만 ReceiveVotes를 증가
@@ -378,7 +378,7 @@ func main() {
 	dataMu.Lock()
 	for addr, vehicle := range serverData {
 		fmt.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
-		if vehicle.ReceiveVotes == TOTAL_VEHICLS {
+		if vehicle.ReceiveVotes == TOTAL_VEHICLES {
 			VEHICLES = RemoveValue(VEHICLES, vehicle.Address)
 			fmt.Printf("Address %d Vehicle passed \n", vehicle.Address)
 		}

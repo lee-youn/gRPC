@@ -47,7 +47,7 @@ func LicensePlate(value string) string {
 
 	// net := gocv.ReadNet(model, config)
 	// if net.Empty() {
-	// 	log.Fatalf("Error reading network model from: %v %v", model, config)
+	// 	log.Printf("Error reading network model from: %v %v", model, config)
 	// }
 	var CarNumber string
 
@@ -56,7 +56,7 @@ func LicensePlate(value string) string {
 	img := gocv.IMRead(imagePath, gocv.IMReadColor)
 	// img2 := "../images/N65.jpeg"
 	if img.Empty() {
-		log.Fatalf("이미지를 읽지 못했습니다: %s", imagePath)
+		log.Printf("이미지를 읽지 못했습니다: %s", imagePath)
 	}
 	defer img.Close()
 
@@ -66,20 +66,20 @@ func LicensePlate(value string) string {
 	xmlPath := "images/N" + value + ".xml"
 	xmlFile, err := os.Open(xmlPath)
 	if err != nil {
-		log.Fatalf("Failed to open XML file: %v\n", err)
+		log.Printf("Failed to open XML file: %v\n", err)
 	}
 	defer xmlFile.Close()
 
 	xmlData, err := ioutil.ReadAll(xmlFile)
 	if err != nil {
-		log.Fatalf("Failed to read XML file: %v\n", err)
+		log.Printf("Failed to read XML file: %v\n", err)
 	}
 
 	var annotation Annotation
 	err = xml.Unmarshal(xmlData, &annotation)
 	fmt.Printf("annotation 성공\n")
 	if err != nil {
-		log.Fatalf("XML 파싱 실패: %v\n", err)
+		log.Printf("XML 파싱 실패: %v\n", err)
 	}
 
 	// Tesseract 클라이언트 초기화
@@ -109,7 +109,7 @@ func LicensePlate(value string) string {
 				// 잘린 번호판 이미지를 바이트로 인코딩
 				plateBytes, err := gocv.IMEncode(gocv.JPEGFileExt, croppedPlate)
 				if err != nil {
-					log.Fatalf("번호판 이미지 인코딩 실패: %v\n", err)
+					log.Printf("번호판 이미지 인코딩 실패: %v\n", err)
 				}
 
 				// fmt.Println(plateBytes)
@@ -118,7 +118,7 @@ func LicensePlate(value string) string {
 				client.SetImageFromBytes(plateBytes.GetBytes())
 				text, err := client.Text()
 				if err != nil {
-					log.Fatalf("텍스트 인식 실패: %v\n", err)
+					log.Printf("텍스트 인식 실패: %v\n", err)
 				}
 
 				// 인식된 텍스트 출력

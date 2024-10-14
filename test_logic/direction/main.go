@@ -17,7 +17,7 @@ import (
 	pbtimestamp "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var GO_SERVER_PORT = 5005
+var GO_SERVER_PORT = 50000
 
 var VEHICLES []int32
 
@@ -56,7 +56,7 @@ func startServer(address int32, direction string) {
 	// TCP 리스너 생성
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", GO_SERVER_PORT+int(address)))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Printf("failed to listen: %v", err)
 	}
 	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
 
@@ -70,7 +70,7 @@ func startServer(address int32, direction string) {
 
 	// 서버 시작 (차단 함수)
 	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		log.Printf("failed to serve: %v", err)
 	}
 
 }
@@ -81,6 +81,10 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 	// 동시에 접근 못하게 함(즉, 동시에 request가 도착하는 일 없음)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if req == nil {
+		return nil, fmt.Errorf("received nil request")
+	}
 
 	fmt.Printf("Port %s direction : %s\n", s.Port, s.Vehicle.Direction)
 	fmt.Printf("Port %s direction : %s\n", req.Port, req.Vehicle.Direction)
@@ -121,7 +125,9 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 }
 
 func (s *server) LeaderElection(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	fmt.Printf("#LeaderElection# Port %s made a request to port %s.\n", req.Port, s.Port)
+
+	fmt.Printf("\n#LeaderElection#\n Port (%s) made a request to port (%+v).\n\n", req.Vehicle, s.Vehicle)
+	fmt.Printf("vehicle test : %v\n", s.Vehicle.ReceiveVotes)
 
 	if s.Vehicle.ReceiveVotes < req.Vehicle.ReceiveVotes {
 		fmt.Printf("요청 차량의 투표수가 더 많습니다.\n")
@@ -203,8 +209,8 @@ func (s *server) RandomAgreement(ctx context.Context, req *pb.Request) (*pb.Resp
 }
 
 func (s *server) UpdateVoteCount(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// s.mu.Lock()
+	// defer s.mu.Unlock()
 
 	fmt.Println("#UpdateVoteCount# Do the server and client addresses match?")
 	fmt.Printf("server : %d, client : %d\n", s.Vehicle.Address, req.Vehicle.Address)
@@ -213,6 +219,7 @@ func (s *server) UpdateVoteCount(ctx context.Context, req *pb.Request) (*pb.Resp
 		// 요청에서 받은 값으로 ReceiveVotes 업데이트
 		s.Vehicle.ReceiveVotes = req.Vehicle.ReceiveVotes
 		s.Vehicle.ElectionTime = req.Vehicle.ElectionTime
+		fmt.Printf("잘업데이트됐나테스트 : %+v\n", s.Vehicle)
 		fmt.Printf("차량 %d의 투표 수를 %d로 업데이트했습니다.\n", s.Vehicle.Address, s.Vehicle.ReceiveVotes)
 
 		// 성공을 나타내는 응답 준비 및 반환
@@ -257,7 +264,7 @@ func RemoveValue(slice []int32, valueToRemove int32) []int32 {
 	return result
 }
 
-var TOTAL_VEHICLS int32
+var TOTAL_VEHICLES int32
 
 func Contains(slice []int32, item int32) bool {
 	for _, v := range slice {
@@ -270,13 +277,21 @@ func Contains(slice []int32, item int32) bool {
 
 // 차량과 관련된 차량을 VECHICLES 리스트에서 제거하는 함수
 func removeVehiclesIfQuorumReached(vehicle *pb.Vehicle) bool {
+	// VEHICLES가 비어있거나 vehicle.Address가 유효하지 않으면 리턴
+	// if len(VEHICLES) == 0 || int(vehicle.Address) >= len(VEHICLES) {
+	// 	fmt.Println("VEHICLES is empty or vehicle.Address is out of range.")
+	// 	return false
+	// }
+
 	VEHICLES = RemoveValue(VEHICLES, vehicle.Address)
+	fmt.Printf("제거할 차량 : %v, 제거됨? : %v\n", vehicle, VEHICLES)
 
 	// Covehicles 처리
 	for _, covehicle := range vehicle.Covehicle {
 		if !Contains(VEHICLES, covehicle.Address) {
 			continue
 		}
+		fmt.Printf("통과할 차량 번호: %d \n", covehicle.Address)
 		VEHICLES = RemoveValue(VEHICLES, covehicle.Address)
 		fmt.Printf("Address %d Vehicle passed \n", covehicle.Address)
 
@@ -285,7 +300,7 @@ func removeVehiclesIfQuorumReached(vehicle *pb.Vehicle) bool {
 			if !Contains(VEHICLES, subCovehicle.Address) {
 				continue
 			}
-			VEHICLES = RemoveValue(VEHICLES, subCovehicle.Address)
+			VEHICLES = RemoveValue(VEHICLES, VEHICLES[subCovehicle.Address])
 			fmt.Printf("Address %d Vehicle passed \n", subCovehicle.Address)
 		}
 	}
@@ -294,389 +309,354 @@ func removeVehiclesIfQuorumReached(vehicle *pb.Vehicle) bool {
 	return len(VEHICLES) == 0
 }
 
-// 주어진 포트에서 실행 중인 프로세스를 종료하는 함수
-// func killProcess(port int32) {
-// 	cmd := exec.Command("sh", "-c", "lsof -ti :"+strconv.Itoa(int(port))+" | xargs kill -9")
-// 	err := cmd.Run()
-// 	if err != nil {
-// 		log.Printf("Failed to kill process on port %d: %v", port, err)
-// 	}
-// }
+// 주어진 차량 배열에서 n개의 차량을 무작위로 선택하는 함수
+func selectRandomVehicles(vehicles []int, n int) []int {
+	selected := make([]int, 0, n)
+	vehicleCopy := append([]int{}, vehicles...) // 원본 배열을 복사
+	for i := 0; i < n; i++ {
+		idx := rand.Intn(len(vehicleCopy))
+		selected = append(selected, vehicleCopy[idx])
+		vehicleCopy = append(vehicleCopy[:idx], vehicleCopy[idx+1:]...)
+	}
+	return selected
+}
+
+// 두 배열 간의 차집합을 구하는 함수
+func difference(a, b []int) []int {
+	m := make(map[int]bool)
+	for _, item := range b {
+		m[item] = true
+	}
+	diff := []int{}
+	for _, item := range a {
+		if !m[item] {
+			diff = append(diff, item)
+		}
+	}
+	return diff
+}
+
+func contains(slice []int, value int) bool {
+	for _, v := range slice {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
-	var TOTOA_TIME float64
+	// var TOTOA_TIME float64
 	totalStartTime := time.Now()
 
-	// 교차로가 많아질수록? 5차선 6차선일 때 합의가 어려워짐..ㅠㅠ
-	// var randomNum int32 = int32(rand.Intn(5))
-	var TOTAL_VEHICLS int32 = 8
-	// var RandomByzantine int32 = int32(rand.Intn(5))
-	// var QUORUM int32 = (TOTAL_VEHICLS / 2) + 1
+	const NUMBER_OF_TOTAL_VEHICLES = 8
+	hvRatio := 0.5
 
-	for i := int32(0); i < TOTAL_VEHICLS; i++ {
-		VEHICLES = append(VEHICLES, i)
+	// 전체 차량 배열 생성
+	totalVehicles := make([]int, NUMBER_OF_TOTAL_VEHICLES)
+	for i := 0; i < NUMBER_OF_TOTAL_VEHICLES; i++ {
+		totalVehicles[i] = i + 1 // 차량 번호 1부터 360까지 설정
 	}
 
-	for len(VEHICLES) > 0 {
-		var TOTAL_VEHICLS int32 = int32(len(VEHICLES))
-		var RandomByzantine int32 = int32(TOTAL_VEHICLS)
-		var QUORUM int32 = (TOTAL_VEHICLS / 2) + 1
+	// 비잔틴 장애 차량 수 계산
+	numHV := int(float64(NUMBER_OF_TOTAL_VEHICLES) * hvRatio)
+	// 비잔틴 장애 차량 배열
+	hvVehicles := selectRandomVehicles(totalVehicles, numHV)
+	// 나머지 정상 차량 배열 (av 차량)
+	avVehicles := difference(totalVehicles, hvVehicles)
+	// 결과 출력
+	fmt.Printf("비잔틴 장애 차량 (hv): %v\n", hvVehicles)
+	fmt.Printf("정상 차량 (av): %v\n", avVehicles)
 
-		if TOTAL_VEHICLS == 0 {
-			fmt.Printf("There are no vehicles entering at the same time.\n")
-			return
+	for len(totalVehicles) > 0 {
+
+		var randomNum int32 = int32(rand.Intn(8) + 1) // 1 또는 2
+		if randomNum > int32(len(totalVehicles)) {
+			randomNum = int32(len(totalVehicles)) // 차량 수보다 많지 않도록 조정
+		}
+		var TOTAL_VEHICLES int32 = randomNum
+		selectedVehicles := selectRandomVehicles(totalVehicles, int(TOTAL_VEHICLES))
+		fmt.Printf("선택된 차량: %v\n", selectedVehicles)
+
+		// var RandomByzantine []int
+		var RandomByzantine []int
+
+		for i := 0; i < len(selectedVehicles); i++ {
+			VEHICLES = append(VEHICLES, int32(i)) // i 값을 VEHICLES에 추가
+			// if contains(hvVehicles, selectedVehicles[i]) {
+			// 	RandomByzantine = append(RandomByzantine, i)
+			// }
 		}
 
-		if TOTAL_VEHICLS == 1 {
-			fmt.Printf("Address %d Vehicle passed \n", 0)
-			VEHICLES = RemoveValue(VEHICLES, 0)
-			break
-		}
+		for len(VEHICLES) > 0 {
+			var TOTAL_VEHICLES int32 = int32(len(VEHICLES))
+			// var RandomByzantine int32 = int32(TOTAL_VEHICLES)
+			// var QUORUM int32 = int32(math.Ceil(float64(TOTAL_VEHICLES) / 2.0))
+			var QUORUM int32 = int32(TOTAL_VEHICLES)/2 + 1
 
-		if TOTAL_VEHICLS == 2 {
-
-			// 서버를 각각의 고루틴에서 실행
-			for i := int32(0); i < TOTAL_VEHICLS; i++ {
-				go startServer(i, "0")
+			if TOTAL_VEHICLES == 0 {
+				fmt.Printf("There are no vehicles entering at the same time.\n")
+				fmt.Printf("\n")
+				return
 			}
 
-			// // 잠시 대기하여 서버가 시작될 시간 확보
-			// time.Sleep(time.Second * 2)
-
-			var vehicle_number1 int32 = int32(rand.Intn(2))
-			var vehicle_number2 int32 = int32(rand.Intn(2))
-
-			fmt.Printf("동시진입차량: %d \n", VEHICLES)
-
-			vehicles := []*pb.Vehicle{
-				{
-					Address:      0,
-					RandomNumber: vehicle_number1,
-				},
-				{
-					Address:      1,
-					RandomNumber: vehicle_number2,
-				},
+			if TOTAL_VEHICLES == 1 {
+				fmt.Printf("Address %d Vehicle passed \n", 0)
+				fmt.Printf("\n")
+				VEHICLES = RemoveValue(VEHICLES, 0)
+				break
 			}
 
-			fmt.Printf("랜덤 숫자: %d, %d\n", vehicle_number1, vehicle_number2)
+			if TOTAL_VEHICLES == 2 {
 
-			// 서버 연결을 미리 설정
-			connections := make([]struct {
-				client pb.VehicleServiceClient
-				conn   *grpc.ClientConn
-				ctx    context.Context
-				cancel context.CancelFunc
-			}, TOTAL_VEHICLS)
+				// startTime := time.Now()
 
-			for i := int32(0); i < TOTAL_VEHICLS; i++ {
-				addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+int(i))
-				client, conn, ctx, cancel, err := rpcConnectTo(addr)
-				if err != nil {
-					log.Fatalf("connect error: %v", err)
+				// 비전시스템
+				time.Sleep(500 * time.Millisecond)
+
+				// endTime := time.Now()
+				// duration := endTime.Sub(startTime)
+
+				VEHICLES = RemoveValue(VEHICLES, VEHICLES[0])
+				VEHICLES = RemoveValue(VEHICLES, VEHICLES[0])
+				// fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
+				break
+			}
+
+			// 3대 이상일 때
+			if TOTAL_VEHICLES >= 3 {
+				var directions = [12]string{"Rs", "Rl", "Rr", "Ls", "Ll", "Lr", "Ds", "Dl", "Dr", "Us", "Ul", "Ur"}
+
+				var vehicle_direction_list []string // 방향 저장 리스트
+
+				// 서버를 각각의 고루틴에서 실행
+				for i := int32(0); i < TOTAL_VEHICLES; i++ {
+					vehicle_direction_list = append(vehicle_direction_list, directions[rand.Intn(len(directions))])
+					go startServer(i, vehicle_direction_list[i]) // 랜덤 방향 같이 전달
 				}
-				connections[i] = struct {
-					client pb.VehicleServiceClient
-					conn   *grpc.ClientConn
-					ctx    context.Context
-					cancel context.CancelFunc
-				}{client, conn, ctx, cancel}
-			}
 
-			startTime := time.Now()
-
-			for len(VEHICLES) > 0 {
+				// WaitGroup을 사용하여 모든 고루틴이 끝날 때까지 대기
 				var wg sync.WaitGroup
-				wg.Add(len(VEHICLES))
+				wg.Add(int(TOTAL_VEHICLES))
 
-				// 합의 상태 추적
-				var allVehiclesPassed bool
+				// 모든 서버의 데이터를 저장할 맵
+				serverData := make(map[int32]*pb.Vehicle)
+				var dataMu sync.Mutex // 맵 접근을 위한 뮤텍스
 
-				connData := connections[0]
+				// startTime := time.Now()
+				var done = false
 
-				r, err := connData.client.RandomAgreement(connData.ctx, &pb.Request{
-					Vehicle:       vehicles[0],
-					Port:          fmt.Sprintf("%d", GO_SERVER_PORT+0),
-					TotalVehicles: TOTAL_VEHICLS,
-					RandomNumber:  vehicles[1].RandomNumber,
-				})
-				if err != nil {
-					log.Fatalf("grpc call error: %v", err)
-				}
+				// 각 서버에 요청 보내기
+				for i := int32(0); i < TOTAL_VEHICLES; i++ {
+					if contains(RandomByzantine, int(i)) { // i가 RandomByzantine에 포함되어 있는지 확인
+						fmt.Printf("비잔틴 장애 차량 number = %d\n", i)
+					}
 
-				if r.Status == "pass" {
-					VEHICLES = RemoveValue(VEHICLES, 0)
-					fmt.Printf("Address %d Vehicle passed \n", 0)
-					remainingVehicle := VEHICLES[0]
-					VEHICLES = RemoveValue(VEHICLES, remainingVehicle)
-					fmt.Printf("Address %d Vehicle passed \n", remainingVehicle)
-					break
-
-				} else if r.Status == "wait" {
-					fmt.Printf("Address %d Vehicle has to wait \n", 0)
-					VEHICLES = RemoveValue(VEHICLES, 1)
-					fmt.Printf("Address %d Vehicle passed \n", 1)
-					remainingVehicle := VEHICLES[0]
-					VEHICLES = RemoveValue(VEHICLES, remainingVehicle)
-					fmt.Printf("Address %d Vehicle passed \n", remainingVehicle)
-					break
-
-				} else if r.Status == "draw" {
-					vehicles[0].RandomNumber = int32(rand.Intn(2))
-					vehicles[1].RandomNumber = int32(rand.Intn(2))
-					fmt.Printf("랜덤 숫자: %d, %d\n", vehicles[0].RandomNumber, vehicles[1].RandomNumber)
-					continue
-				}
-
-				// 모든 차량이 통과했는지 확인
-				if len(VEHICLES) == 0 {
-					allVehiclesPassed = true
-				}
-				// 모든 고루틴이 완료될 때까지 대기
-				wg.Wait()
-
-				// 모든 차량이 통과했으면 종료
-				if allVehiclesPassed {
-					break
-				}
-			}
-			endTime := time.Now()
-			duration := endTime.Sub(startTime)
-			TOTOA_TIME += float64(duration)
-
-			fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
-			break
-		}
-
-		// 3대 이상일 때
-		if TOTAL_VEHICLS >= 3 {
-			var directions = [12]string{"Rs", "Rl", "Rr", "Ls", "Ll", "Lr", "Ds", "Dl", "Dr", "Us", "Ul", "Ur"}
-
-			var vehicle_direction_list []string // 방향 저장 리스트
-
-			// 서버를 각각의 고루틴에서 실행
-			for i := int32(0); i < TOTAL_VEHICLS; i++ {
-				vehicle_direction_list = append(vehicle_direction_list, directions[rand.Intn(len(directions))])
-				go startServer(i, vehicle_direction_list[i]) // 랜덤 방향 같이 전달
-			}
-
-			// 잠시 대기하여 서버가 시작될 시간 확보
-			// time.Sleep(time.Second * 2)
-
-			// WaitGroup을 사용하여 모든 고루틴이 끝날 때까지 대기
-			var wg sync.WaitGroup
-			wg.Add(int(TOTAL_VEHICLS))
-
-			// 모든 서버의 데이터를 저장할 맵
-			serverData := make(map[int32]*pb.Vehicle)
-			var dataMu sync.Mutex // 맵 접근을 위한 뮤텍스
-
-			startTime := time.Now()
-			var done = false
-
-			// 각 서버에 요청 보내기
-			for i := int32(0); i < TOTAL_VEHICLS; i++ {
-				if i == RandomByzantine {
-					fmt.Printf("비잔틴 장애 차량 number = %d\n", RandomByzantine)
-				}
-
-				go func(i int32) {
-					defer wg.Done()
-					for j := int32(0); j < TOTAL_VEHICLS; j++ {
-						if i == j {
-							continue // 자기 자신에게는 요청을 보내지 않음
-						}
-						if j == RandomByzantine {
-							continue // 비잔틴 장애로부터 요청 못받음을 그냥 continue로 표현
-						}
-						if i == RandomByzantine {
-							continue // 비잔틴 장애로부터 요청 못받음을 그냥 continue로 표현
-						}
-
-						wg.Add(1) // 새로운 고루틴을 시작하므로 WaitGroup 카운터를 증가
-						go func(j int32) {
-							defer wg.Done()
-
-							if done { // 종료 플래그가 설정된 경우
-								return
+					go func(i int32) {
+						defer wg.Done()
+						for j := int32(0); j < TOTAL_VEHICLES; j++ {
+							if i == j {
+								continue // 자기 자신에게는 요청을 보내지 않음
+							}
+							if contains(RandomByzantine, int(j)) {
+								continue // 비잔틴 장애로부터 요청 못받음을 그냥 continue로 표현
+							}
+							if contains(RandomByzantine, int(i)) {
+								continue // 비잔틴 장애로부터 요청 못받음을 그냥 continue로 표현
 							}
 
-							addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+int(j))
-							client, conn, ctx, cancel, err := rpcConnectTo(addr)
-							if err != nil {
-								log.Fatalf("connect error: %v", err)
-							}
-							defer conn.Close()
-							defer cancel()
+							wg.Add(1) // 새로운 고루틴을 시작하므로 WaitGroup 카운터를 증가
+							go func(j int32) {
+								defer wg.Done()
 
-							r, err := client.ReceiveRequest(
-								ctx,
-								&pb.Request{
-									Vehicle: &pb.Vehicle{
-										Address:   i,
-										Direction: vehicle_direction_list[i],
-									},
-									Port:          fmt.Sprintf("%d", GO_SERVER_PORT+int(i)),
-									TotalVehicles: TOTAL_VEHICLS,
-								},
-							)
-							if err != nil {
-								log.Fatalf("grpc call error: %v", err)
-							}
-
-							if r.Status == "acknowledged" {
-								dataMu.Lock()
-								defer dataMu.Unlock()
-
-								vehicle, exists := serverData[i]
-
-								// 기존 vehicle이 있으면 가져오고 없으면 새로운 vehicle 생성
-								if !exists {
-									vehicle = &pb.Vehicle{
-										Address:      i,
-										ReceiveVotes: 0,
-										ElectionVote: 0,
-									}
+								if done { // 종료 플래그가 설정된 경우
+									return
 								}
 
-								// Covehicle 처리 (DirectionStatus가 "True"인 경우에만)
-								if r.DirectionStatus == "True" {
-									var covehicles []*pb.Vehicle
-									covehicles = vehicle.Covehicle // 기존의 covehicles 가져오기
-
-									// covehicles 리스트를 순회하면서 같은 방향의 차량을 찾고 추가
-									for i := int32(0); i < int32(len(covehicles)); i++ {
-										var linked_covehicles []*pb.Vehicle
-										if direction.DirectionBoolean(covehicles[i].Direction, r.ResponseDirection) {
-											linked_covehicles = covehicles[i].Covehicle
-											linked_covehicles = append(linked_covehicles, r.Vehicle)
-											covehicles[i].Covehicle = linked_covehicles
-										}
-									}
-
-									// 새로 들어온 차량을 covehicles에 추가
-									covehicles = append(covehicles, r.Vehicle)
-									vehicle.Covehicle = covehicles
-								}
-
-								// 요청 시간 저장
-								vehicle.ElectionTime = pbtimestamp.Now()
-
-								// 투표 수 증가
-								vehicle.ReceiveVotes++
-
-								// 증가된 투표수를 서버에 반영하는 요청 추가
-								addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+int(i)) // 자신의 서버 주소
+								addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+int(j))
 								client, conn, ctx, cancel, err := rpcConnectTo(addr)
 								if err != nil {
-									log.Fatalf("connect error: %v", err)
+									log.Printf("connect error: %v", err)
 								}
 								defer conn.Close()
 								defer cancel()
 
-								// UpdateVoteCount 호출
-								_, err = client.UpdateVoteCount(ctx, &pb.Request{
-									Vehicle: vehicle,
-								})
+								r, err := client.ReceiveRequest(
+									ctx,
+									&pb.Request{
+										Vehicle: &pb.Vehicle{
+											Address:   i,
+											Direction: vehicle_direction_list[i],
+										},
+										Port:          fmt.Sprintf("%d", GO_SERVER_PORT+int(i)),
+										TotalVehicles: TOTAL_VEHICLES,
+									},
+								)
 								if err != nil {
-									log.Printf("failed to update vote count: %v", err)
+									log.Printf("grpc call error: %v", err)
 								}
 
-								// vehicle을 업데이트
-								serverData[i] = vehicle
+								if r.Status == "acknowledged" {
+									dataMu.Lock()
+									defer dataMu.Unlock()
 
-								// 만약 Receive Votes >= Quorum이면 자신을 제외한 차량에 LeaderElection 요청을 보내기
-								if vehicle.ReceiveVotes >= QUORUM {
-									fmt.Printf("차량 %d의 ReceiveVotes가 Quorum에 도달했습니다. LeaderElection 요청을 보냅니다.\n", vehicle.Address)
+									vehicle, exists := serverData[i]
 
-									var wg sync.WaitGroup
-									// 고루틴으로 LeaderElection 요청 전송
-									for k := int32(0); k < TOTAL_VEHICLS-1; k++ {
-										if k == i {
-											continue // 자기 자신에게는 요청을 보내지 않음
+									// 기존 vehicle이 있으면 가져오고 없으면 새로운 vehicle 생성
+									if !exists {
+										vehicle = &pb.Vehicle{
+											Address:      i,
+											ReceiveVotes: 0,
+											ElectionVote: 0,
 										}
-										if k == RandomByzantine {
-											continue // 비잔틴 장애로부터 요청 못받음을 그냥 continue로 표현
+									}
+
+									// Covehicle 처리 (DirectionStatus가 "True"인 경우에만)
+									if r.DirectionStatus == "True" {
+										var covehicles []*pb.Vehicle
+										covehicles = vehicle.Covehicle // 기존의 covehicles 가져오기
+
+										// covehicles 리스트를 순회하면서 같은 방향의 차량을 찾고 추가
+										for i := int32(0); i < int32(len(covehicles)); i++ {
+											var linked_covehicles []*pb.Vehicle
+											if direction.DirectionBoolean(covehicles[i].Direction, r.ResponseDirection) {
+												linked_covehicles = covehicles[i].Covehicle
+												linked_covehicles = append(linked_covehicles, r.Vehicle)
+												covehicles[i].Covehicle = linked_covehicles
+											}
 										}
 
-										wg.Add(1) // 고루틴 수 증가
-										go func(k int32) {
-											defer wg.Done() // 고루틴 완료 시 호출
-											if done {       // 종료 플래그가 설정된 경우
-												return
-											}
-											addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+int(k))
-											client, conn, ctx, cancel, err := rpcConnectTo(addr)
-											if err != nil {
-												fmt.Printf("connect error to %s: %v\n", addr, err)
-												return
-											}
-											defer conn.Close()
-											defer cancel()
+										// 새로 들어온 차량을 covehicles에 추가
+										covehicles = append(covehicles, r.Vehicle)
+										vehicle.Covehicle = covehicles
+									}
 
-											// LeaderElection 요청 전송
-											r, err = client.LeaderElection(ctx, &pb.Request{
-												Vehicle: vehicle,
-											})
-											if err != nil {
-												fmt.Printf("LeaderElection 요청 실패: %v\n", err)
-											} else {
-												fmt.Printf("차량 %d에 LeaderElection 요청을 성공적으로 보냈습니다.\n", k)
+									// 요청 시간 저장
+									vehicle.ElectionTime = pbtimestamp.Now()
+
+									// 비동기적으로 UpdateVoteCount 호출
+									go func(vehicle *pb.Vehicle) {
+										// 투표 수 증가
+										vehicle.ReceiveVotes++
+										addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+int(vehicle.Address)) // 자신의 서버 주소
+										client, conn, ctx, cancel, err := rpcConnectTo(addr)
+										if err != nil {
+											log.Printf("connect error: %v", err)
+										}
+										defer conn.Close()
+										defer cancel()
+
+										// UpdateVoteCount 호출
+										_, err = client.UpdateVoteCount(ctx, &pb.Request{
+											Vehicle: vehicle,
+										})
+										if err != nil {
+											log.Printf("failed to update vote count: %v", err)
+										}
+									}(vehicle) // 고루틴에 vehicle 전달
+
+									// vehicle을 업데이트
+									serverData[i] = vehicle
+
+									// 만약 Receive Votes >= Quorum이면 자신을 제외한 차량에 LeaderElection 요청을 보내기
+									if vehicle.ReceiveVotes >= QUORUM-1 {
+										fmt.Printf("차량 %d의 ReceiveVotes가 Quorum에 도달했습니다. LeaderElection 요청을 보냅니다.\n", vehicle.Address)
+
+										var wg sync.WaitGroup
+										// 고루틴으로 LeaderElection 요청 전송
+										for k := int32(0); k < TOTAL_VEHICLES-1; k++ {
+											if k == i {
+												continue // 자기 자신에게는 요청을 보내지 않음
+											}
+											if contains(RandomByzantine, int(k)) {
+												continue // 비잔틴 장애로부터 요청 못받음을 그냥 continue로 표현
 											}
 
-											if r.Status == "acknowledged" {
-												vehicle.ElectionVote++
-												if vehicle.ElectionVote >= QUORUM {
-													removeVehiclesIfQuorumReached(vehicle)
-													done = true // 모든 고루틴 종료 플래그 설정
+											wg.Add(1) // 고루틴 수 증가
+											go func(k int32) {
+												defer wg.Done() // 고루틴 완료 시 호출
+												if done {       // 종료 플래그가 설정된 경우
 													return
 												}
-											}
+												addr := fmt.Sprintf("localhost:%d", GO_SERVER_PORT+int(k))
+												client, conn, ctx, cancel, err := rpcConnectTo(addr)
+												if err != nil {
+													fmt.Printf("connect error to %s: %v\n", addr, err)
+													return
+												}
+												defer conn.Close()
+												defer cancel()
 
-										}(k) // 고루틴에 j를 전달
+												// LeaderElection 요청 전송
+												r, err = client.LeaderElection(ctx, &pb.Request{
+													Vehicle: vehicle,
+												})
+												if err != nil {
+													fmt.Printf("LeaderElection 요청 실패: %v\n", err)
+												} else {
+													fmt.Printf("차량 %d에 LeaderElection 요청을 성공적으로 보냈습니다.\n", k)
+												}
+
+												if r.Status == "acknowledged" {
+													vehicle.ElectionVote++
+													fmt.Printf("현재 동의 수 : %d\n", vehicle.ElectionVote)
+													if vehicle.ElectionVote >= QUORUM-1 {
+														fmt.Printf("vehicle이 비어있는지 확인 : %v\n", vehicle)
+														removeVehiclesIfQuorumReached(vehicle)
+														done = true // 모든 고루틴 종료 플래그 설정
+														return
+													}
+												}
+
+											}(k) // 고루틴에 j를 전달
+										}
+
+										// 모든 고루틴이 완료될 때까지 대기
+										wg.Wait()
 									}
-
-									// 모든 고루틴이 완료될 때까지 대기
-									wg.Wait()
-								}
-							} else {
-								dataMu.Lock()
-								vehicle, exists := serverData[i]
-								if !exists {
-									vehicle = &pb.Vehicle{
-										Address:      i,
-										ReceiveVotes: 1,
-										ElectionVote: 0,
+								} else {
+									dataMu.Lock()
+									vehicle, exists := serverData[i]
+									if !exists {
+										vehicle = &pb.Vehicle{
+											Address:      i,
+											ReceiveVotes: 0,
+											ElectionVote: 0,
+										}
+										serverData[i] = vehicle
 									}
-									serverData[i] = vehicle
+									dataMu.Unlock()
 								}
-								dataMu.Unlock()
-							}
 
-						}(j)
-					}
-				}(i)
+							}(j)
+						}
+					}(i)
+				}
+
+				// 모든 고루틴이 완료될 때까지 대기
+				wg.Wait()
+				dataMu.Lock()
+
+				// endTime := time.Now()
+				// duration := endTime.Sub(startTime)
+				// TOTOA_TIME += float64(duration)
+
+				dataMu.Unlock()
+
+				fmt.Printf("\n")
+				// fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
+
+				fmt.Printf("남은 차량: %d \n", VEHICLES)
+
+				GO_SERVER_PORT += int(TOTAL_VEHICLES)
+				fmt.Printf("GO_SERVER_PORT 변경 : %v\n", GO_SERVER_PORT)
+				// fmt.Printf("합의 걸리는 최종시간 : %v\n", TOTOA_TIME)
+				fmt.Printf("\n")
 			}
-
-			// 모든 고루틴이 완료될 때까지 대기
-			wg.Wait()
-			dataMu.Lock()
-
-			endTime := time.Now()
-			duration := endTime.Sub(startTime)
-			TOTOA_TIME += float64(duration)
-
-			dataMu.Unlock()
-
-			fmt.Printf("\n")
-			fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
-
-			fmt.Printf("남은 차량: %d \n", VEHICLES)
-
-			GO_SERVER_PORT += int(TOTAL_VEHICLS)
-			fmt.Printf("GO_SERVER_PORT 변경 : %v\n", GO_SERVER_PORT)
-			fmt.Printf("합의 걸리는 최종시간 : %v\n", TOTOA_TIME)
 		}
+		totalVehicles = difference(totalVehicles, selectedVehicles)
+		fmt.Printf("결과 차량: %v\n", totalVehicles)
+
 	}
 	totalEndTime := time.Now()
 	duration := totalEndTime.Sub(totalStartTime)
