@@ -45,7 +45,7 @@ func startServer(address int32, direction string) {
 	if err != nil {
 		log.Printf("failed to listen: %v", err)
 	}
-	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
+	log.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
 
 	// gRPC 서버 생성
 	grpcServer := grpc.NewServer()
@@ -59,18 +59,18 @@ func startServer(address int32, direction string) {
 }
 
 func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+	log.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
 
 	// 동시에 접근 못하게 함(즉, 동시에 request가 도착하는 일 없음)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fmt.Printf("Port %s direction : %s\n", s.Port, s.Vehicle.Direction)
-	fmt.Printf("Port %s direction : %s\n", req.Port, req.Vehicle.Direction)
+	log.Printf("Port %s direction : %s\n", s.Port, s.Vehicle.Direction)
+	log.Printf("Port %s direction : %s\n", req.Port, req.Vehicle.Direction)
 
 	if s.Vehicle.SendVotes == 0 {
 		// 투표 응답을 처리하는 경우
-		fmt.Printf("Vehicle %d received request from port %s: %v\n", s.Vehicle.Address, req.Port, req.Vehicle)
+		log.Printf("Vehicle %d received request from port %s: %v\n", s.Vehicle.Address, req.Port, req.Vehicle)
 		s.Vehicle.SendVotes = 1 // 투표 완료로 설정
 
 		// 방향의 유효성을 검사하고 응답 메시지 작성
@@ -90,7 +90,7 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 		return response, nil
 	} else {
 		// 이미 투표한 경우
-		fmt.Printf("Vehicle %d has already responded to a request.\n", s.Vehicle.Address)
+		log.Printf("Vehicle %d has already responded to a request.\n", s.Vehicle.Address)
 
 		// 응답 메시지 작성
 		response := &pb.Response{
@@ -104,32 +104,32 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 }
 
 func (s *server) RandomAgreement(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+	log.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
 
 	s.Vehicle.RandomNumber = req.RandomNumber
 
 	var response *pb.Response
 
 	if req.Vehicle.RandomNumber == s.Vehicle.RandomNumber {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Cannot reach an agreement.\n")
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Cannot reach an agreement.\n")
 		response = &pb.Response{
 			Message: fmt.Sprintf("Cannot reach an agreement"),
 			Status:  "draw",
 		}
 	} else if req.Vehicle.RandomNumber > s.Vehicle.RandomNumber {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
 		response = &pb.Response{
 			Message: fmt.Sprintf("Vehicle %d may pass first.", req.Vehicle.Address),
 			Status:  "pass",
 		}
 	} else {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
 		response = &pb.Response{
 			Message: fmt.Sprintf("Vehicle %d has to wait.", req.Vehicle.Address),
 			Status:  "wait",
@@ -320,7 +320,7 @@ func main() {
 	wg.Wait()
 
 	// 최종 서버 데이터를 출력
-	fmt.Println("Final server data:")
+	log.Printfln("Final server data:")
 	dataMu.Lock()
 
 outerLoop:
@@ -330,15 +330,15 @@ outerLoop:
 			continue
 		}
 
-		fmt.Printf("\n")
-		fmt.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
-		fmt.Printf("Covehicle: %s\n", vehicle.Covehicle)
+		log.Printf("\n")
+		log.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
+		log.Printf("Covehicle: %s\n", vehicle.Covehicle)
 		for i := int32(0); i < int32(len(vehicle.Covehicle)); i++ {
 			if !Contains(VEHICLES, vehicle.Covehicle[i].Address) {
 				continue
 			}
-			fmt.Printf("Covehicle's: %s\n", vehicle.Covehicle[i])
-			fmt.Printf("Covehicle's covehicle: %s\n", vehicle.Covehicle[i].Covehicle)
+			log.Printf("Covehicle's: %s\n", vehicle.Covehicle[i])
+			log.Printf("Covehicle's covehicle: %s\n", vehicle.Covehicle[i].Covehicle)
 		}
 		if vehicle.ReceiveVotes == TOTAL_VEHICLES {
 			VEHICLES = RemoveValue(VEHICLES, vehicle.Address)
@@ -348,16 +348,16 @@ outerLoop:
 				}
 
 				VEHICLES = RemoveValue(VEHICLES, vehicle.Covehicle[i].Address)
-				fmt.Printf("Address %d Vehicle passed \n", vehicle.Covehicle[i].Address)
+				log.Printf("Address %d Vehicle passed \n", vehicle.Covehicle[i].Address)
 				for j := int32(0); j < int32(len(vehicle.Covehicle[i].Covehicle)); j++ {
 					if !Contains(VEHICLES, vehicle.Covehicle[i].Covehicle[j].Address) {
 						continue
 					}
 					VEHICLES = RemoveValue(VEHICLES, vehicle.Covehicle[i].Covehicle[j].Address)
-					fmt.Printf("Address %d Vehicle passed \n", vehicle.Covehicle[i].Covehicle[j].Address)
+					log.Printf("Address %d Vehicle passed \n", vehicle.Covehicle[i].Covehicle[j].Address)
 				}
 			}
-			fmt.Printf("Address %d Vehicle passed \n", vehicle.Address)
+			log.Printf("Address %d Vehicle passed \n", vehicle.Address)
 			if len(VEHICLES) == 0 {
 				break outerLoop
 			}
@@ -368,8 +368,8 @@ outerLoop:
 
 	dataMu.Unlock()
 
-	fmt.Printf("\n")
-	fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
+	log.Printf("\n")
+	log.Printf("합의 과정에 걸린 시간: %v\n", duration)
 
-	fmt.Printf("남은 차량: %d \n", VEHICLES)
+	log.Printf("남은 차량: %d \n", VEHICLES)
 }

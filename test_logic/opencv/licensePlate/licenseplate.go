@@ -2,7 +2,6 @@ package licenseplate
 
 import (
 	"encoding/xml"
-	"fmt"
 	"image"
 	"image/color"
 	"io/ioutil"
@@ -52,7 +51,7 @@ func LicensePlate(value string) string {
 	var CarNumber string
 
 	imagePath := "images/N" + value + ".jpeg"
-	fmt.Println("Image Path:", imagePath)
+	log.Printfln("Image Path:", imagePath)
 	img := gocv.IMRead(imagePath, gocv.IMReadColor)
 	// img2 := "../images/N65.jpeg"
 	if img.Empty() {
@@ -60,7 +59,7 @@ func LicensePlate(value string) string {
 	}
 	defer img.Close()
 
-	fmt.Printf("이미지 로드 성공 \n")
+	log.Printf("이미지 로드 성공 \n")
 
 	// Load XML file with license plate coordinates
 	xmlPath := "images/N" + value + ".xml"
@@ -77,7 +76,7 @@ func LicensePlate(value string) string {
 
 	var annotation Annotation
 	err = xml.Unmarshal(xmlData, &annotation)
-	fmt.Printf("annotation 성공\n")
+	log.Printf("annotation 성공\n")
 	if err != nil {
 		log.Printf("XML 파싱 실패: %v\n", err)
 	}
@@ -89,7 +88,7 @@ func LicensePlate(value string) string {
 	// Iterate through the plates found in the XML
 	// XML에서 발견된 객체를 순회
 	for _, obj := range annotation.Objects {
-		fmt.Printf("Object Name: %s\n", obj.Name)
+		log.Printf("Object Name: %s\n", obj.Name)
 		if obj.Name == "number_plate" {
 			left := obj.BndBox.Xmin
 			top := obj.BndBox.Ymin
@@ -102,9 +101,9 @@ func LicensePlate(value string) string {
 			// 이미지에서 번호판 잘라내기
 			croppedPlate := img.Region(image.Rect(left, top, right, bottom))
 			if croppedPlate.Empty() {
-				fmt.Println("잘린 번호판 이미지가 비어 있습니다.")
+				log.Printfln("잘린 번호판 이미지가 비어 있습니다.")
 			} else {
-				fmt.Printf("잘린 번호판 이미지 존재: left=%d, top=%d, right=%d, bottom=%d\n", left, top, right, bottom)
+				log.Printf("잘린 번호판 이미지 존재: left=%d, top=%d, right=%d, bottom=%d\n", left, top, right, bottom)
 
 				// 잘린 번호판 이미지를 바이트로 인코딩
 				plateBytes, err := gocv.IMEncode(gocv.JPEGFileExt, croppedPlate)
@@ -112,7 +111,7 @@ func LicensePlate(value string) string {
 					log.Printf("번호판 이미지 인코딩 실패: %v\n", err)
 				}
 
-				// fmt.Println(plateBytes)
+				// log.Printfln(plateBytes)
 
 				// Tesseract OCR로 텍스트 인식
 				client.SetImageFromBytes(plateBytes.GetBytes())
@@ -122,7 +121,7 @@ func LicensePlate(value string) string {
 				}
 
 				// 인식된 텍스트 출력
-				fmt.Printf("인식된 번호판: %s\n", text)
+				log.Printf("인식된 번호판: %s\n", text)
 				CarNumber = text
 
 				// 이미지에 인식된 텍스트 표시
@@ -136,7 +135,7 @@ func LicensePlate(value string) string {
 	// defer window.Close()
 
 	// window.IMShow(img)
-	fmt.Printf("car number : %s\n", CarNumber)
+	log.Printf("car number : %s\n", CarNumber)
 
 	return CarNumber
 }
@@ -147,9 +146,9 @@ func LicensePlateComparison(vehicle1 string, vehicle2 string) bool {
 	vehicle2_number := LicensePlate(vehicle2)
 	comparisonEndTime := time.Now()
 	duration := comparisonEndTime.Sub(comparisonStartTime)
-	fmt.Printf("vehicle1_number: %s\n", vehicle1_number)
-	fmt.Printf("vehicle2_number: %s\n", vehicle2_number)
-	fmt.Printf("duration time : %v\n", duration)
+	log.Printf("vehicle1_number: %s\n", vehicle1_number)
+	log.Printf("vehicle2_number: %s\n", vehicle2_number)
+	log.Printf("duration time : %v\n", duration)
 
 	return vehicle1_number >= vehicle2_number
 }

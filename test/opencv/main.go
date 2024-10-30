@@ -65,7 +65,7 @@ func startServer(address int32, license int32) {
 	if err != nil {
 		log.Printf("failed to listen: %v", err)
 	}
-	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
+	log.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
 
 	// gRPC 서버 생성
 	grpcServer := grpc.NewServer()
@@ -79,7 +79,7 @@ func startServer(address int32, license int32) {
 }
 
 func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+	log.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
 
 	// 동시에 접근 못하게 함(즉, 동시에 request가 도착하는 일 없음)
 	s.mu.Lock()
@@ -87,10 +87,10 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 	vehicle1License := fmt.Sprintf("%d", s.Vehicle.LicensePlate)
 	vehicle2License := fmt.Sprintf("%d", req.Vehicle.LicensePlate)
 
-	fmt.Printf("Port %s license : %s\n", s.Port, vehicle1License)
-	fmt.Printf("Port %s license : %s\n", req.Port, vehicle2License)
+	log.Printf("Port %s license : %s\n", s.Port, vehicle1License)
+	log.Printf("Port %s license : %s\n", req.Port, vehicle2License)
 
-	fmt.Printf("Vehicle %d received request from port %s: %v\n", s.Vehicle.Address, req.Port, req.Vehicle)
+	log.Printf("Vehicle %d received request from port %s: %v\n", s.Vehicle.Address, req.Port, req.Vehicle)
 
 	// 방향의 유효성을 검사하고 응답 메시지 작성
 	PassStatus := "False"
@@ -117,32 +117,32 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 }
 
 func (s *server) RandomAgreement(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+	log.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
 
 	s.Vehicle.RandomNumber = req.RandomNumber
 
 	var response *pb.Response
 
 	if req.Vehicle.RandomNumber == s.Vehicle.RandomNumber {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Cannot reach an agreement.\n")
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Cannot reach an agreement.\n")
 		response = &pb.Response{
 			Message: fmt.Sprintf("Cannot reach an agreement"),
 			Status:  "draw",
 		}
 	} else if req.Vehicle.RandomNumber > s.Vehicle.RandomNumber {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
 		response = &pb.Response{
 			Message: fmt.Sprintf("Vehicle %d may pass first.", req.Vehicle.Address),
 			Status:  "pass",
 		}
 	} else {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
 		response = &pb.Response{
 			Message: fmt.Sprintf("Vehicle %d has to wait.", req.Vehicle.Address),
 			Status:  "wait",
@@ -296,7 +296,7 @@ func main() {
 	wg.Wait()
 
 	// 최종 서버 데이터를 출력
-	fmt.Println("Final server data:")
+	log.Printfln("Final server data:")
 	dataMu.Lock()
 
 outerLoop:
@@ -306,12 +306,12 @@ outerLoop:
 				continue
 			}
 
-			fmt.Printf("\n")
-			fmt.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
+			log.Printf("\n")
+			log.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
 			if vehicle.ReceiveVotes == TOTAL_VEHICLESS-1 {
 				VEHICLES = RemoveValue(VEHICLES, vehicle.Address)
 				TOTAL_VEHICLESS -= 1
-				fmt.Printf("Address %d Vehicle passed \n", vehicle.Address)
+				log.Printf("Address %d Vehicle passed \n", vehicle.Address)
 				if len(VEHICLES) == 0 {
 					break outerLoop
 				}
@@ -324,9 +324,9 @@ outerLoop:
 
 	dataMu.Unlock()
 
-	fmt.Printf("\n")
-	fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
+	log.Printf("\n")
+	log.Printf("합의 과정에 걸린 시간: %v\n", duration)
 
-	fmt.Printf("남은 차량: %d \n", VEHICLES)
-	fmt.Printf("번호판 비교 횟수: %d\n", count)
+	log.Printf("남은 차량: %d \n", VEHICLES)
+	log.Printf("번호판 비교 횟수: %d\n", count)
 }

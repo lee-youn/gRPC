@@ -13,7 +13,7 @@ import "google/protobuf/timestamp.proto";
 
 // Vehicle 메시지 정의
 message Vehicle {
-  string number = 1;      // 차량 번호
+  int32 number = 1;      // 차량 번호
   string direction = 2;   // 방향
   int32 address = 3;      // 주소
   int32 send_votes = 4;        // 보내는 투표 수

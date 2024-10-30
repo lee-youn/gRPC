@@ -44,7 +44,7 @@ func startServer(address int32) {
 	if err != nil {
 		log.Printf("failed to listen: %v", err)
 	}
-	fmt.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
+	log.Printf("Server is listening on port %d\n", GO_SERVER_PORT+int(address))
 
 	// gRPC 서버 생성
 	grpcServer := grpc.NewServer()
@@ -58,7 +58,7 @@ func startServer(address int32) {
 }
 
 func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+	log.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
 
 	// 동시에 접근 못하게 함(즉, 동시에 request가 도착하는 일 없음)
 	s.mu.Lock()
@@ -66,7 +66,7 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 
 	if s.Vehicle.SendVotes == 0 {
 		// 투표 응답 response
-		fmt.Printf("Vehicle %d received response request: %v\n", s.Vehicle.Address, req.Vehicle)
+		log.Printf("Vehicle %d received response request: %v\n", s.Vehicle.Address, req.Vehicle)
 		s.Vehicle.SendVotes = 1 // 투표 완료로 설정
 
 		// 응답 메시지 작성
@@ -78,7 +78,7 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 		return response, nil
 	} else {
 		// 이미 투표한 경우
-		fmt.Printf("Vehicle %d has already responded to a request.\n", s.Vehicle.Address)
+		log.Printf("Vehicle %d has already responded to a request.\n", s.Vehicle.Address)
 
 		// 응답 메시지 작성
 		response := &pb.Response{
@@ -92,32 +92,32 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 }
 
 func (s *server) RandomAgreement(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	fmt.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
+	log.Printf("Port %s made a request to port %s.\n", req.Port, s.Port)
 
 	s.Vehicle.RandomNumber = req.RandomNumber
 
 	var response *pb.Response
 
 	if req.Vehicle.RandomNumber == s.Vehicle.RandomNumber {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Cannot reach an agreement.\n")
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Cannot reach an agreement.\n")
 		response = &pb.Response{
 			Message: fmt.Sprintf("Cannot reach an agreement"),
 			Status:  "draw",
 		}
 	} else if req.Vehicle.RandomNumber > s.Vehicle.RandomNumber {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Vehicle %d may pass first.\n", req.Vehicle.Address)
 		response = &pb.Response{
 			Message: fmt.Sprintf("Vehicle %d may pass first.", req.Vehicle.Address),
 			Status:  "pass",
 		}
 	} else {
-		fmt.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
-		fmt.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
-		fmt.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
+		log.Printf("reqeust randomnumber: %d\n", req.Vehicle.RandomNumber)
+		log.Printf("server randomnumber: %d\n", s.Vehicle.RandomNumber)
+		log.Printf("Vehicle %d has to wait.\n", req.Vehicle.Address)
 		response = &pb.Response{
 			Message: fmt.Sprintf("Vehicle %d has to wait.", req.Vehicle.Address),
 			Status:  "wait",
@@ -168,12 +168,12 @@ func main() {
 	}
 
 	if TOTAL_VEHICLES == 0 {
-		fmt.Printf("There are no vehicles entering at the same time.\n")
+		log.Printf("There are no vehicles entering at the same time.\n")
 		return
 	}
 
 	if TOTAL_VEHICLES == 1 {
-		fmt.Printf("Address %d Vehicle passed \n", 0)
+		log.Printf("Address %d Vehicle passed \n", 0)
 		VEHICLES = RemoveValue(VEHICLES, 0)
 		return
 	}
@@ -191,7 +191,7 @@ func main() {
 		var vehicle_number1 int32 = int32(rand.Intn(2))
 		var vehicle_number2 int32 = int32(rand.Intn(2))
 
-		fmt.Printf("동시진입차량: %d \n", VEHICLES)
+		log.Printf("동시진입차량: %d \n", VEHICLES)
 
 		vehicles := []*pb.Vehicle{
 			{
@@ -204,7 +204,7 @@ func main() {
 			},
 		}
 
-		fmt.Printf("랜덤 숫자: %d, %d\n", vehicle_number1, vehicle_number2)
+		log.Printf("랜덤 숫자: %d, %d\n", vehicle_number1, vehicle_number2)
 
 		// 서버 연결을 미리 설정
 		connections := make([]struct {
@@ -251,25 +251,25 @@ func main() {
 
 			if r.Status == "pass" {
 				VEHICLES = RemoveValue(VEHICLES, 0)
-				fmt.Printf("Address %d Vehicle passed \n", 0)
+				log.Printf("Address %d Vehicle passed \n", 0)
 				remainingVehicle := VEHICLES[0]
 				VEHICLES = RemoveValue(VEHICLES, remainingVehicle)
-				fmt.Printf("Address %d Vehicle passed \n", remainingVehicle)
+				log.Printf("Address %d Vehicle passed \n", remainingVehicle)
 				break
 
 			} else if r.Status == "wait" {
-				fmt.Printf("Address %d Vehicle has to wait \n", 0)
+				log.Printf("Address %d Vehicle has to wait \n", 0)
 				VEHICLES = RemoveValue(VEHICLES, 1)
-				fmt.Printf("Address %d Vehicle passed \n", 1)
+				log.Printf("Address %d Vehicle passed \n", 1)
 				remainingVehicle := VEHICLES[0]
 				VEHICLES = RemoveValue(VEHICLES, remainingVehicle)
-				fmt.Printf("Address %d Vehicle passed \n", remainingVehicle)
+				log.Printf("Address %d Vehicle passed \n", remainingVehicle)
 				break
 
 			} else if r.Status == "draw" {
 				vehicles[0].RandomNumber = int32(rand.Intn(2))
 				vehicles[1].RandomNumber = int32(rand.Intn(2))
-				fmt.Printf("랜덤 숫자: %d, %d\n", vehicles[0].RandomNumber, vehicles[1].RandomNumber)
+				log.Printf("랜덤 숫자: %d, %d\n", vehicles[0].RandomNumber, vehicles[1].RandomNumber)
 				continue
 			}
 
@@ -288,7 +288,7 @@ func main() {
 		endTime := time.Now()
 		duration := endTime.Sub(startTime)
 
-		fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
+		log.Printf("합의 과정에 걸린 시간: %v\n", duration)
 		return
 	}
 
@@ -374,18 +374,18 @@ func main() {
 	duration := endTime.Sub(startTime)
 
 	// 최종 서버 데이터를 출력
-	fmt.Println("Final server data:")
+	log.Printfln("Final server data:")
 	dataMu.Lock()
 	for addr, vehicle := range serverData {
-		fmt.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
+		log.Printf("Address: %d, Vehicle: %+v\n", addr, vehicle)
 		if vehicle.ReceiveVotes == TOTAL_VEHICLES {
 			VEHICLES = RemoveValue(VEHICLES, vehicle.Address)
-			fmt.Printf("Address %d Vehicle passed \n", vehicle.Address)
+			log.Printf("Address %d Vehicle passed \n", vehicle.Address)
 		}
 	}
 	dataMu.Unlock()
 
-	fmt.Printf("합의 과정에 걸린 시간: %v\n", duration)
+	log.Printf("합의 과정에 걸린 시간: %v\n", duration)
 
-	fmt.Printf("남은 차량: %d \n", VEHICLES)
+	log.Printf("남은 차량: %d \n", VEHICLES)
 }
