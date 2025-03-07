@@ -35,11 +35,11 @@ type server struct {
 }
 
 // 서버 인스턴스 생성 및 초기화 후 실행
-func startServer(address int32, direction string, number int32) (*grpc.Server, string) {
+func startServer(address int32, direction string, number int32, electionStatus string) (*grpc.Server, string) {
 	// 서버 인스턴스 생성 및 초기화
 	s := &server{
-		Port:    fmt.Sprintf("%d", GO_SERVER_PORT+int(address)),                      // 포트 번호를 문자열로 변환
-		Vehicle: &pb.Vehicle{Number: number, Address: address, Direction: direction}, // 기본 차량 정보로 초기화
+		Port:    fmt.Sprintf("%d", GO_SERVER_PORT+int(address)),                                                      // 포트 번호를 문자열로 변환
+		Vehicle: &pb.Vehicle{Number: number, Address: address, Direction: direction, ElectionStatus: electionStatus}, // 기본 차량 정보로 초기화
 	}
 
 	// TCP 리스너 생성
@@ -104,11 +104,13 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 			ResponseDirection: s.Vehicle.Direction,
 			Vehicle:           s.Vehicle, // 현재 서버의 차량 정보를 포함
 		}
-
 		return response, nil
 	} else {
 		// 이미 투표한 경우
 		log.Printf("Vehicle %d has already responded to a request.\n", s.Vehicle.Number)
+		if s.Vehicle.ReceiveVotes >= req.Vehicle.ReceiveVotes {
+			log.Printf("Vehicle %d 투표수가 더 많습니다. 2 s투표수: %d, req투표수: %d\n", s.Vehicle.Number, s.Vehicle.ReceiveVotes, req.Vehicle.ReceiveVotes)
+		}
 
 		// 응답 메시지 작성
 		response := &pb.Response{
@@ -116,7 +118,6 @@ func (s *server) ReceiveRequest(ctx context.Context, req *pb.Request) (*pb.Respo
 			Status:  "ignored",
 			Vehicle: s.Vehicle, // 현재 서버의 차량 정보를 포함
 		}
-
 		return response, nil
 	}
 }
@@ -126,6 +127,17 @@ func (s *server) LeaderElection(ctx context.Context, req *pb.Request) (*pb.Respo
 	log.Printf("\n#LeaderElection#\n Port (%s) made a request to port (%+v).\n\n", req.Vehicle, s.Vehicle)
 	log.Printf("vehicle test : %v\n", s.Vehicle.ReceiveVotes)
 
+	log.Printf("Request Vehicle Status: %s\n", req.Vehicle.ElectionStatus)
+	if req.Vehicle.ElectionStatus == "Follower" {
+		log.Printf("Follower는 요청을 보내지 못합니다.\n")
+		response := &pb.Response{
+			Message: fmt.Sprintf("Vehicle %d is follower", s.Vehicle.Number),
+			Status:  "ignored",
+			Vehicle: s.Vehicle, // 현재 서버의 차량 정보를 포함
+		}
+		return response, nil
+	}
+
 	if s.Vehicle.ReceiveVotes < req.Vehicle.ReceiveVotes {
 		log.Printf("요청 차량의 투표수가 더 많습니다.\n")
 		response := &pb.Response{
@@ -133,6 +145,9 @@ func (s *server) LeaderElection(ctx context.Context, req *pb.Request) (*pb.Respo
 			Status:  "acknowledged",
 			Vehicle: s.Vehicle, // 현재 서버의 차량 정보를 포함
 		}
+		s.Vehicle.ElectionStatus = "Follower"
+		s.Vehicle.ReceiveVotes = req.Vehicle.ReceiveVotes
+		s.Vehicle.ElectionTime = req.Vehicle.ElectionTime
 		return response, nil
 	} else {
 		log.Printf("요청 차량의 투표수가 더 적거나 동일합니다.")
@@ -147,6 +162,9 @@ func (s *server) LeaderElection(ctx context.Context, req *pb.Request) (*pb.Respo
 					Status:  "acknowledged",
 					Vehicle: s.Vehicle, // 현재 서버의 차량 정보를 포함
 				}
+				s.Vehicle.ElectionStatus = "Follower"
+				s.Vehicle.ReceiveVotes = req.Vehicle.ReceiveVotes
+				s.Vehicle.ElectionTime = req.Vehicle.ElectionTime
 				return response, nil
 			} else {
 				log.Printf("요청 차량의 선거 시간이 더 예전입니다.\n")
@@ -155,6 +173,9 @@ func (s *server) LeaderElection(ctx context.Context, req *pb.Request) (*pb.Respo
 					Status:  "ignored",
 					Vehicle: s.Vehicle, // 현재 서버의 차량 정보를 포함
 				}
+				req.Vehicle.ElectionStatus = "Follower"
+				req.Vehicle.ReceiveVotes = s.Vehicle.ReceiveVotes
+				req.Vehicle.ElectionTime = s.Vehicle.ElectionTime
 				return response, nil
 			}
 		}
@@ -164,6 +185,9 @@ func (s *server) LeaderElection(ctx context.Context, req *pb.Request) (*pb.Respo
 			Status:  "ignored",
 			Vehicle: s.Vehicle, // 현재 서버의 차량 정보를 포함
 		}
+		req.Vehicle.ElectionStatus = "Follower"
+		req.Vehicle.ReceiveVotes = s.Vehicle.ReceiveVotes
+		req.Vehicle.ElectionTime = s.Vehicle.ElectionTime
 		return response, nil
 	}
 
@@ -315,7 +339,11 @@ var PASS_COUNT int
 func main() {
 	// var TOTOA_TIME float64
 	// const testNumber = 0
-	filePath := "/Users/leeyounjeong/Documents/LAB/실험로그/50_04.txt"
+	filePath := "/Users/leeyounjeong/Documents/LAB/실험로그/1224/0102_300vehicles_QUORUM_N_4roads_00.txt"
+
+	// 500ms 안에 끝나는지 테스트
+	var totalConsensusCount = 0
+	var longTimeConsensusCount = 0
 
 	// 로그 파일 생성
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -328,8 +356,9 @@ func main() {
 	log.SetOutput(file)
 	totalStartTime := time.Now()
 
-	const NUMBER_OF_TOTAL_VEHICLES = 50
-	hvRatio := 0.4
+	const NUMBER_OF_TOTAL_VEHICLES = 300
+	hvRatio := 0.0
+	const VISION_TIME = 500
 
 	// 전체 차량 배열 생성
 	totalVehicles := make([]int, NUMBER_OF_TOTAL_VEHICLES)
@@ -348,13 +377,20 @@ func main() {
 	log.Printf("정상 차량 (av): %v\n", avVehicles)
 
 	for len(totalVehicles) > 0 {
+		totalConsensusCount++
 		TIMEOUT := time.Now()
 
-		var randomNum int32 = int32(rand.Intn(4) + 1) // 1 또는 2
+		// 다음 테스트 진행할 때 주석 해제
+		var randomNum int32 = int32(rand.Intn(8) + 1) // 1 또는 2
 		if randomNum > int32(len(totalVehicles)) {
 			randomNum = int32(len(totalVehicles)) // 차량 수보다 많지 않도록 조정
 		}
 		var TOTAL_VEHICLES int32 = randomNum
+		// var randomNum int32 = 3 // 1 또는 2
+		// if randomNum > int32(len(totalVehicles)) {
+		// 	randomNum = int32(len(totalVehicles)) // 차량 수보다 많지 않도록 조정
+		// }
+		// var TOTAL_VEHICLES int32 = randomNum
 		selectedVehicles := selectRandomVehicles(totalVehicles, int(TOTAL_VEHICLES))
 		log.Printf("선택된 차량: %v\n", selectedVehicles)
 
@@ -374,12 +410,13 @@ func main() {
 			duration := END_TIMEOUT.Sub(TIMEOUT)
 			log.Printf("TIME : %v\n", duration)
 			log.Printf("TIME2 : %v\n", STOP_VEHICLES_PASS_TIME)
-			log.Printf("비교시간 : %s\n", time.Duration(500)*time.Millisecond)
+			log.Printf("비교시간 : %s\n", time.Duration(VISION_TIME)*time.Millisecond)
 
-			if len(VEHICLES) > 1 && duration-(time.Duration(STOP_VEHICLES_PASS_TIME)*time.Millisecond) >= time.Duration(500)*time.Millisecond {
+			if len(VEHICLES) > 1 && duration-(time.Duration(STOP_VEHICLES_PASS_TIME)*time.Millisecond) >= time.Duration(VISION_TIME)*time.Millisecond {
 				log.Printf("TIMEOUT! 비전시스템으로 합의 진행\n")
+				longTimeConsensusCount++
 				log.Printf("TIME3 : %v\n", duration-(time.Duration(STOP_VEHICLES_PASS_TIME)*time.Millisecond))
-				time.Sleep(time.Duration(500) * time.Millisecond)
+				time.Sleep(time.Duration(VISION_TIME) * time.Millisecond)
 
 				for _, i := range VEHICLES {
 					log.Printf("%v \n", VEHICLES)
@@ -397,7 +434,11 @@ func main() {
 			}
 
 			var TOTAL_VEHICLES int32 = int32(len(VEHICLES))
-			// var QUORUM int32 = (int32(TOTAL_VEHICLES)+1)/2 + 1 // 리더는 자기 자신한테 투표를 하니깐..1을 더 더해줘야함
+
+			// 정족수가 과반 수 이상일 때
+			// var QUORUM int32 = (int32(TOTAL_VEHICLES))/2 + 1 // 리더는 자기 자신한테 투표를 하니깐..1을 더 더해줘야함
+
+			// 정족수가 전체일 때
 			var QUORUM int32 = TOTAL_VEHICLES
 
 			if TOTAL_VEHICLES == 0 {
@@ -436,7 +477,7 @@ func main() {
 					log.Printf("2대 합의과정인데, hv가 한 대라도 있을 경우 : %v\n", time.Duration(RANDOM_PASS_TIME)*time.Millisecond)
 				} else {
 					// 비전시스템
-					time.Sleep(500 * time.Millisecond)
+					time.Sleep(VISION_TIME * time.Millisecond)
 				}
 
 				if VEHICLES[0] == VEHICLES[1] {
@@ -470,12 +511,13 @@ func main() {
 					// vehicle_direction_list = append(vehicle_direction_list, directions[rand.Intn(len(directions))])
 					DirectionMap[i] = directions[rand.Intn(len(directions))]
 					log.Printf("directionMap test : %v\n", DirectionMap)
+					var electionStatus = "Candidate"
 
 					// 고루틴 내에서 실행
 					go func(index int32, direction string, number int32) {
 						defer wg.Done()
 
-						grpcServer, port := startServer(index, direction, number) // 랜덤 방향 같이 전달
+						grpcServer, port := startServer(index, direction, number, electionStatus) // 랜덤 방향 같이 전달
 
 						if grpcServer != nil {
 							// defer grpcServer.GracefulStop()            // 서버 종료 처리
@@ -579,10 +621,11 @@ func main() {
 									// 기존 vehicle이 있으면 가져오고 없으면 새로운 vehicle 생성
 									if !exists {
 										vehicle = &pb.Vehicle{
-											Number:       i,
-											Address:      i,
-											ReceiveVotes: 0,
-											ElectionVote: 0,
+											Number:         i,
+											Address:        i,
+											ReceiveVotes:   0,
+											ElectionVote:   0,
+											ElectionStatus: "Candidate",
 										}
 									}
 
@@ -701,13 +744,17 @@ func main() {
 												if r.Status == "acknowledged" {
 													vehicle.ElectionVote++
 													log.Printf("현재 동의 수 : %d\n", vehicle.ElectionVote)
-													if vehicle.ElectionVote >= QUORUM-1 {
+													log.Printf("현재 상태 : %s\n", vehicle.ElectionStatus)
+													if vehicle.ElectionVote >= QUORUM-1 && vehicle.ElectionStatus == "Candidate" {
 														log.Printf("vehicle이 비어있는지 확인 : %v\n", vehicle)
 														removeVehiclesIfQuorumReached(vehicle)
 														log.Printf("test2\n")
 														done = true // 모든 고루틴 종료 플래그 설정
 														return
 													}
+												} else if r.Status == "ignored" {
+													serverData[i] = r.Vehicle
+													log.Printf("serverData[i] : %v, r.Vehicle:%v \n", serverData[i], r.Vehicle)
 												}
 
 											}(k) // 고루틴에 j를 전달
@@ -723,10 +770,11 @@ func main() {
 									log.Printf("pass count: %d\n", PASS_COUNT)
 									if !exists {
 										vehicle = &pb.Vehicle{
-											Number:       i,
-											Address:      i,
-											ReceiveVotes: 0,
-											ElectionVote: 0,
+											Number:         i,
+											Address:        i,
+											ReceiveVotes:   0,
+											ElectionVote:   0,
+											ElectionStatus: "Candidate",
 										}
 										serverData[i] = vehicle
 									}
@@ -799,4 +847,7 @@ func main() {
 	totalEndTime := time.Now()
 	duration := totalEndTime.Sub(totalStartTime)
 	log.Printf("합의 걸리는 최종시간 : %v\n", duration)
+	log.Printf("전체 합의 횟수 : %v\n", totalConsensusCount)
+	log.Printf("%vms 이상 걸릴 때 : %v\n", VISION_TIME, longTimeConsensusCount)
+	log.Printf("비전시스템 합의 퍼센트 : %v\n", longTimeConsensusCount/totalConsensusCount*100)
 }
